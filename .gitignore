@@ -1,8 +1,11 @@
 dist
+.bundle/
 .project_env.rc
 .path_progress
 .rvmrc
 .ruby-version
+Gemfile.lock
+vendor/bundle/
 *.rbc
 koans/*
 *~

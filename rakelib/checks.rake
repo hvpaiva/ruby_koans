@@ -3,7 +3,7 @@ namespace "check" do
   desc "Check that the require files match the about_* files"
   task :abouts do
     about_files = Dir['src/about_*.rb'].size
-    about_requires = `grep require src/path_to_enlightenment.rb | wc -l`.to_i
+    about_requires = File.read('src/path_to_enlightenment.rb').scan(/^\s*require ['"]about_/).size
     puts "Checking path_to_enlightenment completeness"
     puts "# of about files:    #{about_files}"
     puts "# of about requires: #{about_requires}"
@@ -18,11 +18,26 @@ namespace "check" do
   desc "Check that asserts have __ replacements"
   task :asserts do
     puts "Checking for asserts missing the replacement text:"
-    begin
-      sh "egrep -n 'assert( |_)' src/about_*.rb | egrep -v '__|_n_|project|about_assert' | egrep -v ' *#'"
+
+    missing_asserts = []
+    Dir['src/about_*.rb'].sort.each do |file|
+      next if file.include?('about_assert')
+      next if file.include?('project')
+
+      File.readlines(file).each_with_index do |line, index|
+        next unless line =~ /assert( |_)/
+        next if line =~ /__|_n_/
+        next if line =~ /^\s*#/
+
+        missing_asserts << "#{file}:#{index + 1}:#{line}"
+      end
+    end
+
+    if missing_asserts.any?
+      puts missing_asserts
       puts
       puts "Examine the above lines for missing __ replacements"
-    rescue RuntimeError => ex
+    else
       puts "OK"
     end
     puts

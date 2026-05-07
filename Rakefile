@@ -35,8 +35,8 @@ module Koans
     if infile =~ /neo/
       cp infile, outfile
     else
-      open(infile) do |ins|
-        open(outfile, "w") do |outs|
+      File.open(infile) do |ins|
+        File.open(outfile, "w") do |outs|
           state = :copy
           ins.each do |line|
             state = :skip if line =~ /^ *#--/
@@ -54,32 +54,24 @@ module Koans
   end
 end
 
-module RubyImpls
-  # Calculate the list of relevant Ruby implementations.
-  def self.find_ruby_impls
-    rubys = `rvm list`.gsub(/=>/,'').split(/\n/).map { |x| x.strip }.reject { |x| x.empty? || x =~ /^rvm/ }.sort
-    expected.map { |impl|
-      last = rubys.grep(Regexp.new(Regexp.quote(impl))).last
-      last ? last.split.first : nil
-    }.compact
-  end
+task :default => :walk_the_path
 
-  # Return a (cached) list of relevant Ruby implementations.
-  def self.list
-    @list ||= find_ruby_impls
-  end
-
-  # List of expected ruby implementations.
-  def self.expected
-    %w(ruby-1.8.7 ruby-1.9.2 jruby ree)
+desc "Walk the path until the first koan that needs meditation"
+task :walk_the_path do
+  verbose(false) do
+    Rake::Task['gen'].invoke
+    cd PROB_DIR do
+      ruby 'path_to_enlightenment.rb'
+    end
   end
 end
 
-task :default => :walk_the_path
+desc "Alias for walk_the_path"
+task :walk => :walk_the_path
 
-task :walk_the_path do
-  cd PROB_DIR
-  ruby 'path_to_enlightenment.rb'
+desc "Run the koans automatically when files change"
+task :watch do
+  ruby 'bin/koans', 'watch'
 end
 
 directory DOWNLOAD_DIR
@@ -135,25 +127,5 @@ end
 desc "Pre-checkin tests (=> run_all)"
 task :cruise => :run_all
 
-desc "Run the completed koans againts a list of relevant Ruby Implementations"
-task :run_all do
-  results = []
-  RubyImpls.list.each do |impl|
-    puts "=" * 40
-    puts "On Ruby #{impl}"
-    sh ". rvm #{impl}; rake run"
-    results << [impl, "RAN"]
-    puts
-  end
-  puts "=" * 40
-  puts "Summary:"
-  puts
-  results.each do |impl, res|
-    puts "#{impl} => RAN"
-  end
-  puts
-  RubyImpls.expected.each do |requested_impl|
-    impl_pattern = Regexp.new(Regexp.quote(requested_impl))
-    puts "No Results for #{requested_impl}" unless results.detect { |x| x.first =~ impl_pattern }
-  end
-end
+desc "Run the completed source koans with the current Ruby"
+task :run_all => :run

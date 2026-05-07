@@ -128,7 +128,7 @@ module Neo
         if using_windows?
           using_win32console
         else
-          return true
+          $stdout.tty?
         end
       else
         ENV['ANSI_COLOR'] =~ /^(t|y)/i
@@ -197,7 +197,7 @@ module Neo
       begin
         yield
       rescue Exception => ex
-        flunk "Expected nothing to be raised, but exception #{exception.inspect} was raised"
+        flunk "Expected nothing to be raised, but exception #{ex.inspect} was raised"
       end
     end
   end
@@ -238,16 +238,17 @@ module Neo
     end
 
     def observe(step)
+      label = "#{step.koan_file}##{step.name}"
       if step.passed?
         @pass_count += 1
         if @pass_count > progress.last.to_i
-          @observations << Color.green("#{step.koan_file}##{step.name} has expanded your awareness.")
+          @observations << Color.green("#{label} has expanded your awareness.")
         end
       else
         @failed_test = step
         @failure = step.failure
         add_progress(@pass_count)
-        @observations << Color.red("#{step.koan_file}##{step.name} has damaged your karma.")
+        @observations << Color.red("#{label} has damaged your karma.")
         throw :neo_exit
       end
     end
@@ -268,6 +269,7 @@ module Neo
         a_zenlike_statement
         show_progress
       else
+        add_progress(@pass_count) if @pass_count > progress.last.to_i
         end_screen
       end
     end
@@ -276,7 +278,8 @@ module Neo
       bar_width = 50
       total_tests = Neo::Koan.total_tests
       scale = bar_width.to_f/total_tests
-      print Color.green("your path thus far [")
+      print Color.green("your path thus far ")
+      print Color.green("[")
       happy_steps = (pass_count*scale).to_i
       happy_steps = 1 if happy_steps == 0 && pass_count > 0
       print Color.green('.'*happy_steps)
@@ -358,11 +361,16 @@ ENDTEXT
 
     def guide_through_error
       puts
-      puts "The answers you seek..."
-      puts Color.red(indent(failure.message).join)
-      puts
+      unless assert_failed?
+        puts "The answers you seek..."
+        puts Color.red(indent("#{failure.class}: #{failure.message}").join)
+        puts
+      else
+        puts "The answer is hidden, so the discovery remains yours."
+        puts
+      end
       puts "Please meditate on the following code:"
-      puts embolden_first_line_only(indent(find_interesting_lines(failure.backtrace)))
+      puts Color.red("  #{format_location(find_interesting_lines(failure.backtrace).first)}")
       puts
     end
 
@@ -384,9 +392,20 @@ ENDTEXT
     end
 
     def find_interesting_lines(backtrace)
-      backtrace.reject { |line|
+      Array(backtrace).reject { |line|
         line =~ /neo\.rb/
       }
+    end
+
+    def format_location(line)
+      return "unknown" unless line
+
+      line = line.sub(/:in .*/, '')
+      if line =~ /([^\/:]+):(\d+)$/
+        "#{$1}:#{$2}"
+      else
+        line
+      end
     end
 
     # Hat's tip to Ara T. Howard for the zen statements from his
@@ -535,7 +554,9 @@ ENDTEXT
   end
 end
 
-END {
-  Neo::Koan.command_line(ARGV)
-  Neo::ThePath.new.walk
-}
+unless ENV['NEO_DISABLE_END'] == 'true'
+  END {
+    Neo::Koan.command_line(ARGV)
+    Neo::ThePath.new.walk
+  }
+end

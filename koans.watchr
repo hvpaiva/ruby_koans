@@ -1,9 +1,9 @@
 def run_koans
   system 'clear' if STDOUT.tty?
-  system 'ruby ../bin/koans walk'
+  system 'ruby bin/koans walk'
 end
 
-watch(%r{.*\.(rb|txt)$}) do
+watch(%r{^koans/.*\.(rb|txt)$}) do
   run_koans
 end
 
