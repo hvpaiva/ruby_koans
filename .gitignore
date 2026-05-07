@@ -9,3 +9,6 @@ vendor/bundle/
 *.rbc
 koans/*
 *~
+
+# GSD planning workspace — local-only
+.planning/
