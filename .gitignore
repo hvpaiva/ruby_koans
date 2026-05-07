@@ -1,14 +1,15 @@
-dist
-.bundle/
-.project_env.rc
-.path_progress
-.rvmrc
-.ruby-version
-Gemfile.lock
-vendor/bundle/
+# Build artifacts
+*.gem
 *.rbc
-koans/*
+/pkg/
+/tmp/
+/coverage/
+/.bundle/
+/vendor/bundle/
+
+# Editor / OS noise
 *~
+.DS_Store
 
 # GSD planning workspace — local-only
 .planning/
