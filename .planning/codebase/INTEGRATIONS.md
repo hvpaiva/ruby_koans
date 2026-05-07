@@ -4,129 +4,96 @@
 
 ## APIs & External Services
 
-**Package Registry:**
-- RubyGems - Source for runtime/development gems.
-  - SDK/Client: Bundler reading `Gemfile` and `Gemfile.lock`.
-  - Auth: None detected; `Gemfile:1` uses public `https://rubygems.org` and no `.npmrc`, `.gem/credentials`, `.env`, or package-token file is present in the repository root.
-  - Files: `Gemfile`, `Gemfile.lock`.
+This is an offline learning project. There are **no production APIs, no SaaS clients, no SDK calls, and no network I/O at runtime**. The only network-touching operations are dev/release tooling (gem install, scp deploy, GitHub Actions).
 
-**Source Control / Issue Tracking:**
-- GitHub - Repository hosting, issue tracker, pull request CI triggers, and distribution workflow target.
-  - SDK/Client: Git and GitHub Actions; no GitHub API client library detected.
-  - Auth: Handled outside the codebase by Git/GitHub Actions credentials; no repository-stored token detected.
-  - Files: `.github/workflows/ci.yml`, `README.rdoc`, `DEPLOYING`.
-  - Practical references: `README.rdoc:130` points to the issue tracker; `DEPLOYING:8-10` documents `git add download` and `git push` for publishing the ZIP artifact.
+**Gem registry:**
+- `rubygems.org` — declared as the source in `Gemfile:1` (`source "https://rubygems.org"`) and `Gemfile.lock:2`. Bundler fetches `minitest`, `rake`, `drb`, `prism` from here.
 
-**CI Runner Services:**
-- GitHub Actions - Runs internal tests and consistency checks on pushes and pull requests.
-  - SDK/Client: Workflow actions `actions/checkout@v4` and `ruby/setup-ruby@v1` in `.github/workflows/ci.yml:14-21`.
-  - Auth: GitHub-provided workflow token only; no explicit secret usage detected in `.github/workflows/ci.yml`.
-  - Command: `bundle exec rake test check` in `.github/workflows/ci.yml:23-24`.
-
-**Distribution / Upload:**
-- SSH/SCP target `linode:sites/onestepback.org/download` - Legacy upload target for `download/rubykoans.zip`.
-  - SDK/Client: System `scp` command invoked from `Rakefile:94-97`.
-  - Auth: Local SSH configuration/keys outside the repository; no private key or credential file is stored in the repo.
-  - Use carefully: `rake upload` depends on `rake package` and shells out to `scp`, so it requires developer machine credentials and network access.
-
-**Reference Links Only:**
-- External learning/reference URLs are included in documentation and comments but are not called by application code.
-  - Files: `README.rdoc:113-124`, `src/neo.rb:411-413`, `src/about_triangle_project_2.rb:14`, `src/about_methods.rb:130`.
-  - Runtime behavior: no HTTP client imports such as `net/http`, `open-uri`, Faraday, or Rack clients are detected in source files.
+**Optional Java runtime (JRuby):**
+- Loaded only under JRuby (`src/about_java_interop.rb:3` `include Java`). Pulls in `java.util.ArrayList`, `java.util.TreeSet`, `java.lang.String` from the host JVM. This is a learning exercise, not an integration with an external service.
 
 ## Data Storage
 
 **Databases:**
-- Not detected.
-  - Connection: Not applicable.
-  - Client: Not applicable.
-  - Files: No `pg`, `mysql`, `sqlite`, ActiveRecord, Sequel, Redis, or database configuration files detected in `Gemfile`, `Gemfile.lock`, `src/`, `bin/`, `tests/`, or `rakelib/`.
+- None.
 
 **File Storage:**
-- Local filesystem only.
-  - Generated learner files are written from `src/` to `koans/` by `Rakefile:112-115` and `bin/koans:329-345`.
-  - Progress is stored in `koans/.path_progress` by `src/neo.rb:217-238` and read by `bin/koans:196-204`.
-  - ZIP distribution artifact lives at `download/rubykoans.zip`, configured by `Rakefile:13` and produced by `Rakefile:80-92`.
-  - Temporary test progress files are created under system temp directories by `tests/koans_cli_test.rb:18-24`.
+- Local filesystem only. The CLI persists progress to `koans/.path_progress` (`bin/koans:13`), overridable via `KOANS_PROGRESS_FILE`. The runtime also writes the same file from `Neo::Sensei#add_progress` (`src/neo.rb:217-225`) using the constant `PROGRESS_FILE_NAME = '.path_progress'` resolved relative to the working directory.
+- `download/rubykoans.zip` is produced by `rake package` and committed to the repo so GitHub serves it as the public download (`DEPLOYING:1-12`).
 
 **Caching:**
-- GitHub Actions Bundler cache only.
-  - CI cache is enabled by `bundler-cache: true` in `.github/workflows/ci.yml:17-21`.
-  - No application-level cache, Redis, Memcached, or local cache directory is detected.
+- None.
 
 ## Authentication & Identity
 
 **Auth Provider:**
-- Not applicable.
-  - Implementation: This repository is a local Ruby exercise runner and build/test project, not a user-facing service.
-  - Files: No authentication middleware, OAuth/JWT libraries, sessions, users, or credentials configuration detected in `Gemfile`, `src/`, `bin/`, `tests/`, or `rakelib/`.
-
-**Developer Credentials:**
-- SSH credentials are external to the repository for `rake upload`.
-  - Implementation: `Rakefile:94-97` uses `scp download/rubykoans.zip linode:sites/onestepback.org/download`.
-  - Repository handling: no SSH private key, `.netrc`, `.env`, or cloud credential file detected.
+- None. There are no users, sessions, tokens, or credentials in the application code.
+- The only credentialed step is the legacy `rake upload` task (`Rakefile:94-97`), which shells out to `scp #{ZIP_FILE} linode:sites/onestepback.org/download`. That host alias is expected to be configured in the operator's `~/.ssh/config`. No credentials live in the repo.
 
 ## Monitoring & Observability
 
 **Error Tracking:**
-- None.
-  - No Sentry, Honeybadger, Rollbar, OpenTelemetry, StatsD, or similar dependency appears in `Gemfile` or `Gemfile.lock`.
+- None. Errors surface to STDOUT through `Neo::Sensei#guide_through_error` (`src/neo.rb:362-375`) and through Minitest output for the internal test suite.
 
 **Logs:**
-- Console output only.
-  - Koan runtime status, progress, and failure guidance are printed to stdout by `src/neo.rb:264-375`.
-  - CLI status/help output uses `puts` and `warn` in `bin/koans`.
-  - Rake checks write status with `puts` in `rakelib/checks.rake:7-15` and `rakelib/checks.rake:20-43`.
+- `puts`/`print` to STDOUT only. ANSI colors are added by `Neo::Color` (`src/neo.rb:98-145`) and respect the `NO_COLOR` and `ANSI_COLOR` environment variables.
 
 ## CI/CD & Deployment
 
 **Hosting:**
-- GitHub repository for source and ZIP artifact distribution.
-  - Files: `DEPLOYING:1-12` describes updating the ZIP in `download/` and pushing it.
-- Legacy web-server upload target via SSH/SCP is present in `Rakefile:94-97`.
+- Static zip download. The README/DEPLOYING files describe a download button on `rubykoans.com` that points at `download/rubykoans.zip` in the GitHub repo (`DEPLOYING:3-5`). The fork itself is not hosted as an application.
 
 **CI Pipeline:**
-- GitHub Actions.
-  - Workflow: `.github/workflows/ci.yml`.
-  - Triggers: `push` and `pull_request` from `.github/workflows/ci.yml:3`.
-  - Matrix: Ruby 3.2, 3.3, and 3.4 from `.github/workflows/ci.yml:10-12`.
-  - Verification: `bundle exec rake test check` from `.github/workflows/ci.yml:23-24`.
+- GitHub Actions — `.github/workflows/ci.yml`.
+  - Trigger: `on: [push, pull_request]` (`ci.yml:3`).
+  - Runner: `ubuntu-latest`.
+  - Matrix: Ruby `3.2`, `3.3`, `3.4` (`ci.yml:11`), `fail-fast: false`.
+  - Actions used:
+    - `actions/checkout@v4` (`ci.yml:15`).
+    - `ruby/setup-ruby@v1` with `bundler-cache: true` (`ci.yml:18-21`) — installs Ruby and runs `bundle install` with caching.
+  - Command: `bundle exec rake test check` (`ci.yml:24`) — runs Minitest suite plus the `check:abouts` and `check:asserts` consistency tasks (`rakelib/checks.rake:48`).
 
-**Deployment:**
-- Package deployment is artifact-based, not service-based.
-  - Build: `rake package` creates `download/rubykoans.zip` using `Rakefile:80-92`.
-  - Publish path: `DEPLOYING:8-10` documents committing `download/` and pushing.
-  - Optional upload: `rake upload` calls `scp` through `Rakefile:94-97`.
+**Deployment (legacy, manual):**
+- `rake zip` rebuilds `download/rubykoans.zip` (`Rakefile:81-89`).
+- `rake upload` ships the zip to a Linode-hosted SSH alias `linode:sites/onestepback.org/download` (`Rakefile:94-97`). This is upstream-era tooling and is not used by this fork's CI; nothing in `.github/workflows/ci.yml` invokes it.
 
 ## Environment Configuration
 
 **Required env vars:**
-- None required for default local execution with `rake` or `bin/koans walk`.
-
-**Optional env vars:**
-- `SIMPLE_KOAN_OUTPUT` - Plain completion output in `src/neo.rb:93-95`.
-- `NO_COLOR` - Disable color output in `src/neo.rb:125-127`.
-- `ANSI_COLOR` - Force or influence ANSI color output in `src/neo.rb:127-135`.
-- `NEO_DISABLE_END` - Disable Neo `END` hook in `src/neo.rb:557-562`; used by `bin/koans:221-226` and `tests/neo_output_test.rb:3`.
-- `KOANS_WATCH_INTERVAL` - Polling interval for `bin/koans watch` in `bin/koans:175-179`.
-- `KOANS_NO_CLEAR` - Prevent screen clearing in `bin/koans:181-183`.
-- `KOANS_PROGRESS_FILE` - Override progress-file location in `bin/koans:196-198`; useful in tests and isolated sessions.
+- None are required for normal use. All variables are optional toggles (see STACK.md → Configuration).
 
 **Secrets location:**
-- Not stored in this repository.
-- SSH credentials for `rake upload` must come from the developer/system SSH agent or SSH config outside the repository.
-- GitHub Actions uses default platform credentials only; `.github/workflows/ci.yml` does not reference `secrets.*`.
+- No secrets in the repo. No `.env*` files exist. `.gitignore:3` lists `.project_env.rc` (none present), and there is no `.env`, `credentials.*`, or key file. SSH access for `rake upload` relies on the operator's local SSH config.
 
 ## Webhooks & Callbacks
 
 **Incoming:**
 - None.
-  - No web server, Rack app, Rails routes, Sinatra app, webhook endpoints, or HTTP listener detected.
 
 **Outgoing:**
-- None at runtime.
-  - The koan runner does not call external APIs.
-  - Build/deployment tooling may access RubyGems during dependency installation, GitHub during CI, Git remote endpoints during `git push`, and `linode:sites/onestepback.org/download` during `rake upload`.
+- None.
+
+## Developer Tooling Integrations
+
+These are local development conveniences, not service integrations, but they are the closest thing this repo has to "integrations" and are useful to track.
+
+**File-watching loop (built in):**
+- `bin/koans watch` (`bin/koans:49-70`) — built-in poller. Stats `koans/*.{rb,txt}` every `KOANS_WATCH_INTERVAL` seconds (default `0.5`) and re-runs the path on any change. **No external watcher gem required.**
+- `rake watch` (`Rakefile:73-75`) is an alias that just shells out to `ruby bin/koans watch`.
+
+**Watchr DSL (legacy / optional):**
+- `koans.watchr` (top level) and `koans/koans.watchr` (shipped copy) — 11-line scripts using the `watchr` gem's DSL: `watch(%r{^koans/.*\.(rb|txt)$}) { run_koans }`. Not declared in the `Gemfile`; learners must install `watchr` themselves if they want to use it. The README explicitly notes that `bin/koans watch` "does not need an extra watcher gem" (`README.rdoc:73-74`).
+
+**Editor / RDoc:**
+- README is `.rdoc` format (`README.rdoc`), rendered natively by GitHub. No Markdown linting or doc generator is wired up.
+
+**Keynote slide deck:**
+- `keynote/RubyKoans.key` — a presentation file shipped alongside the source. No build integration.
+
+## Repository Artifacts Treated as Integration Surfaces
+
+- `download/rubykoans.zip` — committed binary artifact used as a public download. `Rakefile:80-89` regenerates it from `KOAN_FILES`. Treat this as a release output of the `rake package` "integration."
+- `koans/.path_progress` — runtime-managed progress file. Persisted across runs by `Neo::Sensei` (`src/neo.rb:217-238`) and read by `bin/koans next`/`hint`/`list` (`bin/koans:200-204`). Listed in `.gitignore:4` so it never gets committed.
 
 ---
 

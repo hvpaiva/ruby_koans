@@ -4,251 +4,254 @@
 
 ## Directory Layout
 
-```text
+```
 ruby_koans/
-├── bin/                    # Executable CLI helper for walking, watching, listing, hinting, and resetting koans
-│   └── koans               # `RubyKoansCLI` command entry point
-├── src/                    # Canonical completed source used to generate learner exercises
-│   ├── about_*.rb          # Topic lessons implemented as `About* < Neo::Koan`
-│   ├── neo.rb              # Koan runtime, assertions, progress, and output
-│   ├── path_to_enlightenment.rb # Ordered lesson loader
-│   ├── triangle.rb         # Project exercise implementation source
-│   ├── Rakefile            # Local path runner for source directory
-│   └── *.txt               # Lesson support text files
-├── koans/                  # Generated learner workspace derived from `src/`
-│   ├── about_*.rb          # Learner-facing koan exercises with answers stripped
-│   ├── neo.rb              # Copied runtime support
-│   ├── path_to_enlightenment.rb # Generated ordered lesson loader
-│   ├── .path_progress      # Default progress state file
-│   └── README.rdoc         # Learner instructions copied from root README
-├── tests/                  # Minitest regression suite for tooling and runtime behavior
-├── rakelib/                # Additional Rake tasks loaded by root `Rakefile`
-├── .github/workflows/      # GitHub Actions CI workflow
-├── download/               # Package output target for `download/rubykoans.zip`
-├── keynote/                # Presentation asset storage
-├── .planning/codebase/     # GSD-generated codebase maps
-├── Rakefile                # Main automation and generation task file
-├── Gemfile                 # Ruby dependencies (`rake`, `minitest`)
-├── Gemfile.lock            # Locked dependency versions
-├── README.rdoc             # Project and learner documentation source
-├── DEPLOYING               # Deployment notes
-└── koans.watchr            # Legacy watchr integration
+├── Rakefile                       # Top-level Rake driver (gen pipeline, walk, watch, zip, upload)
+├── Gemfile                        # Two gems: minitest, rake
+├── Gemfile.lock                   # (gitignored, but present locally)
+├── README.rdoc                    # Learner-facing README; documents quick start, bin/koans verbs
+├── DEPLOYING                      # Deployment notes (release / upload to onestepback.org)
+├── koans.watchr                   # watchr config: re-run `bin/koans walk` on koans/ changes
+├── ruby-koans-overhaul-context.md # Untracked working notes
+├── .gitignore                     # Ignores koans/*, .path_progress, Gemfile.lock, *.rbc, etc.
+│
+├── bin/
+│   └── koans                      # Modern CLI: walk/watch/list/next/hint/reset/help (executable, 378 lines)
+│
+├── src/                           # Canonical, answered source (build INPUT)
+│   ├── neo.rb                     # Test runner ("Neo"): Koan, Sensei, ThePath, Assertions, Color
+│   ├── path_to_enlightenment.rb   # Manifest: ordered `require` list defining the walk
+│   ├── about_*.rb                 # 32 koan files, one topic each
+│   ├── triangle.rb                # Free-form exercise stub used by about_triangle_project.rb
+│   ├── GREED_RULES.txt            # Rules for the Greed dice game (used by about_extra_credit.rb)
+│   ├── example_file.txt           # Fixture for koans that read a file
+│   ├── koans.watchr               # Same watchr loop, scoped to inside-the-koans-dir use
+│   └── Rakefile                   # Stripped Rakefile: `task :test => path_to_enlightenment.rb`
+│
+├── koans/                         # Generated, answer-stripped working copy (build OUTPUT)
+│   │                              # GITIGNORED via `koans/*` in .gitignore
+│   ├── neo.rb                     # Verbatim copy of src/neo.rb (filename matches /neo/ -> cp)
+│   ├── path_to_enlightenment.rb   # Verbatim copy of src/path_to_enlightenment.rb
+│   ├── about_*.rb                 # Stripped versions of src/about_*.rb (placeholders blanked)
+│   ├── triangle.rb                # Stripped version of src/triangle.rb (TriangleError stays)
+│   ├── GREED_RULES.txt            # Verbatim copy
+│   ├── example_file.txt           # Verbatim copy
+│   ├── koans.watchr               # Verbatim copy of src/koans.watchr
+│   ├── Rakefile                   # Verbatim copy of src/Rakefile
+│   ├── README.rdoc                # Copied from project root by Rakefile rule (Rakefile:108-110)
+│   └── .path_progress             # Progress ledger, comma-separated pass counts (gitignored)
+│
+├── rakelib/                       # Auto-loaded by Rake; one file per concern
+│   ├── checks.rake                # `check:abouts`, `check:asserts`, top-level `check`
+│   ├── run.rake                   # Tiny alias: `runall => :run`
+│   └── test.rake                  # `Rake::TestTask` over tests/**/*_test.rb
+│
+├── tests/                         # This fork's project tests (NOT learner-facing)
+│   ├── test_helper.rb             # minitest/autorun + Rake.application.load_rakefile
+│   ├── koans_cli_test.rb          # Spawns bin/koans via Open3; asserts on help/list/next/hint/reset
+│   ├── neo_output_test.rb         # Verifies Sensei#guide_through_error never leaks the answer
+│   └── check_test.rb              # Captures stdout from Rake::Task['check:*']
+│
+├── download/
+│   └── rubykoans.zip              # Built by `rake zip`, scp'd by `rake upload`
+│
+├── keynote/
+│   └── RubyKoans.key              # Apple Keynote presentation (historical)
+│
+└── .planning/
+    └── codebase/                  # GSD codebase maps (this analysis lives here)
 ```
 
 ## Directory Purposes
 
 **`bin/`:**
-- Purpose: Holds executable user commands.
-- Contains: The `bin/koans` Ruby script.
-- Key files: `bin/koans`.
-- Use this directory for new executable project commands that should be run from the repository root.
+- Purpose: Executable entry points the user runs directly.
+- Contains: `koans` (the modern CLI).
+- Key files: `bin/koans` (executable, `RbConfig.ruby` shebang, 378 lines).
 
 **`src/`:**
-- Purpose: Canonical source for the complete koans and runtime.
-- Contains: Topic files (`src/about_arrays.rb`), runtime support (`src/neo.rb`), path ordering (`src/path_to_enlightenment.rb`), exercise implementations (`src/triangle.rb`), text fixtures (`src/GREED_RULES.txt`, `src/example_file.txt`), and local runner files (`src/Rakefile`, `src/koans.watchr`).
-- Key files: `src/neo.rb`, `src/path_to_enlightenment.rb`, `src/about_asserts.rb`, `src/triangle.rb`.
-- Use this directory for new canonical koan lessons and source-only solutions.
+- Purpose: The canonical, answered version of every koan. This is what authors edit; the working copy is regenerated from here.
+- Contains: 32 `about_*.rb` koan files, the `neo` runner, the `path_to_enlightenment` manifest, the `triangle.rb` exercise, two fixtures (`GREED_RULES.txt`, `example_file.txt`), a stripped Rakefile, and a `koans.watchr` config.
+- Key files: `src/neo.rb`, `src/path_to_enlightenment.rb`, `src/about_asserts.rb` (the first stop on the path), `src/triangle.rb`.
 
 **`koans/`:**
-- Purpose: Generated learner workspace that users edit while solving koans.
-- Contains: Stripped versions of `src/about_*.rb`, copied runtime files, copied support text, generated README, and progress state.
-- Key files: `koans/neo.rb`, `koans/path_to_enlightenment.rb`, `koans/.path_progress`, `koans/README.rdoc`.
-- Use generation commands rather than manual edits for structural changes to this directory.
-
-**`tests/`:**
-- Purpose: Regression tests for project tooling and runtime behavior.
-- Contains: Minitest classes ending in `_test.rb` and shared setup in `tests/test_helper.rb`.
-- Key files: `tests/test_helper.rb`, `tests/koans_cli_test.rb`, `tests/neo_output_test.rb`, `tests/check_test.rb`.
-- Use this directory for tests of `bin/koans`, `Rakefile` behavior, `Neo` runtime behavior, and check tasks.
+- Purpose: The student-facing working copy. Generated from `src/` by the Rake `:gen` task (or `bin/koans reset`), then edited by the learner.
+- Contains: Mirrors `src/` 1-to-1 for `.rb`/`.txt` files, plus a copy of `README.rdoc` and a progress file `.path_progress`.
+- Generated: Yes — by `Koans.make_koan_file` (`Rakefile:34-54`).
+- Committed: No — `koans/*` is in `.gitignore` (line 10). It is rebuilt by anyone who runs `rake` for the first time.
+- Key files: `koans/path_to_enlightenment.rb` (the actual program executed by every `walk`), `koans/.path_progress` (state).
 
 **`rakelib/`:**
-- Purpose: Adds namespaced and support Rake tasks to the root Rake application.
-- Contains: `rakelib/checks.rake`, `rakelib/test.rake`, `rakelib/run.rake`.
-- Key files: `rakelib/checks.rake` for consistency checks, `rakelib/test.rake` for Minitest task configuration.
-- Use this directory for additional Rake tasks that should load automatically with the root `Rakefile`.
+- Purpose: Auto-loaded Rake tasks; Rake imports every `*.rake` here on startup.
+- Contains: One file per concern (`checks`, `run`, `test`).
+- Key files: `rakelib/test.rake`, `rakelib/checks.rake`.
 
-**`.github/workflows/`:**
-- Purpose: CI automation.
-- Contains: GitHub Actions YAML workflows.
-- Key files: `.github/workflows/ci.yml`.
-- Use this directory for GitHub-hosted verification workflows.
+**`tests/`:**
+- Purpose: Internal project tests for this fork (CLI, no-spoiler invariants, assert-completeness checks). Distinct from the koans themselves.
+- Contains: `*_test.rb` files run by `rake test`, plus `test_helper.rb`.
+- Key files: `tests/koans_cli_test.rb`, `tests/neo_output_test.rb`, `tests/check_test.rb`.
 
 **`download/`:**
-- Purpose: Build output target for packaged koans.
-- Contains: Generated archives such as `download/rubykoans.zip` when `rake package` runs.
-- Key files: `download/rubykoans.zip` when present.
-- Generated: Yes.
+- Purpose: Distribution artifact directory.
+- Contains: `rubykoans.zip` (built by `rake zip`).
+- Generated: Yes — by `Rakefile:87-89`.
+- Committed: Yes (the existing zip is checked in).
 
 **`keynote/`:**
-- Purpose: Stores presentation assets.
-- Contains: `keynote/RubyKoans.key`.
-- Key files: `keynote/RubyKoans.key`.
-- Generated: No.
+- Purpose: Historical presentation deck.
+- Contains: `RubyKoans.key`.
+- Committed: Yes.
 
 **`.planning/codebase/`:**
-- Purpose: Stores GSD codebase maps consumed by planning and execution workflows.
-- Contains: `ARCHITECTURE.md`, `STRUCTURE.md`, and other map documents when generated.
-- Key files: `.planning/codebase/ARCHITECTURE.md`, `.planning/codebase/STRUCTURE.md`.
-- Generated: Yes.
+- Purpose: GSD codebase analysis documents (ARCHITECTURE.md, STRUCTURE.md, etc.).
+- Contains: Maps for tech / arch / quality / concerns focuses.
+- Generated: Yes — by `/gsd-map-codebase`.
+- Committed: Yes when the orchestrator commits them.
 
 ## Key File Locations
 
 **Entry Points:**
-- `bin/koans`: CLI entry point. Use for user-facing commands and command-flow changes.
-- `Rakefile`: Main Rake entry point. Use for generation, packaging, and default path execution changes.
-- `src/path_to_enlightenment.rb`: Direct source path runner and lesson-order definition.
-- `koans/path_to_enlightenment.rb`: Generated learner path runner.
-- `koans/Rakefile`: Local generated-koans runner that executes `path_to_enlightenment.rb`.
-- `src/Rakefile`: Local source runner that executes `path_to_enlightenment.rb`.
+- `bin/koans`: Modern CLI; `RubyKoansCLI.call(ARGV)` dispatches to `walk`/`watch`/`list`/`next`/`hint`/`reset`/`help`.
+- `Rakefile`: Top-level Rake driver; default task is `walk_the_path`.
+- `koans.watchr`: Root-level watchr config; runs `bin/koans walk` on `koans/*.{rb,txt}` changes.
+- `koans/path_to_enlightenment.rb`: The actual Ruby program every walk executes.
+- `koans/Rakefile`: Sub-Rakefile so a learner inside `koans/` can do `rake` and run the path.
 
 **Configuration:**
-- `Gemfile`: Runtime/test dependency declarations (`minitest`, `rake`).
-- `Gemfile.lock`: Locked gem versions.
-- `.github/workflows/ci.yml`: CI Ruby matrix and verification command.
-- `.gitignore`: Git ignore configuration.
-- `koans.watchr`: Root watchr integration that delegates to `ruby bin/koans walk`.
-- `src/koans.watchr`: Source-directory watchr integration that delegates to `ruby ../bin/koans walk`.
+- `Gemfile`: Two gems: `minitest`, `rake`.
+- `Gemfile.lock`: Lockfile (gitignored — line 7 of `.gitignore`).
+- `.gitignore`: Notably ignores `koans/*` (the entire generated tree) and `.path_progress`.
 
 **Core Logic:**
-- `src/neo.rb`: Canonical koan runtime. Change assertions, path execution, progress, color, or failure guidance here.
-- `koans/neo.rb`: Generated learner runtime. Keep synchronized from `src/neo.rb` through generation.
-- `bin/koans`: CLI logic for commands, watch polling, progress introspection, hint extraction, and reset.
-- `Rakefile`: Source-to-koans generation algorithm and main Rake tasks.
-- `src/path_to_enlightenment.rb`: Ordered list of required koan topic files.
-- `src/about_*.rb`: Canonical lesson content.
-- `src/triangle.rb`: Canonical triangle project implementation.
+- `src/neo.rb`: 562 lines. The `Neo` module: `Koan`, `Sensei`, `ThePath`, `Assertions`, `Color`. Top-level helpers `__`, `_n_`, `___`, `____`, `in_ruby_version`. `END {}` block at lines 557-562 auto-runs the walk unless `NEO_DISABLE_END=true`.
+- `src/path_to_enlightenment.rb`: 44 lines. Ordered `require` manifest defining the path; `in_ruby_version` gates apply for keyword arguments, JRuby interop, pattern matching.
+- `Rakefile`: 132 lines. The `Koans` module (lines 17-55), all task definitions, file rules per `src/*` (lines 112-116).
+- `bin/koans`: 378 lines. `RubyKoansCLI` module with `walk`/`watch`/`list`/`next`/`hint`/`reset` plus duplicated generation helpers.
+
+**Generation Pipeline:**
+- `Rakefile:24-32`: `Koans.remove_solution` (regex-based placeholder stripper).
+- `Rakefile:34-54`: `Koans.make_koan_file` (state-machine line copier with `#--`/`#++` markers).
+- `bin/koans:329-354`: Duplicated `make_koan_file` / `remove_solution` for `bin/koans reset`.
+- `Rakefile:99-106`: `:regen`, `:gen`, `:clobber_koans`.
+- `Rakefile:112-116`: One Rake file rule per `src/*`.
 
 **Testing:**
-- `tests/test_helper.rb`: Minitest, Rake, and StringIO setup; loads the root Rakefile.
-- `tests/koans_cli_test.rb`: CLI subprocess behavior for help, list, next, hint, and reset validation.
-- `tests/neo_output_test.rb`: Runtime output and assertion behavior for `Neo::Sensei` and `Neo::Koan`.
-- `tests/check_test.rb`: Rake check task coverage.
-- `rakelib/test.rake`: Rake test task configuration for `tests/**/*_test.rb`.
-- `rakelib/checks.rake`: Check implementation exercised by tests and CI.
+- `rakelib/test.rake`: Defines `rake test`.
+- `tests/test_helper.rb`: Loads minitest + the project Rakefile.
+- `tests/koans_cli_test.rb`: 78 lines; CLI integration tests (`Open3`-based).
+- `tests/neo_output_test.rb`: 55 lines; `Neo::Sensei` output safety tests.
+- `tests/check_test.rb`: 25 lines; runs `Rake::Task['check:*']` and asserts `OK`.
 
-**Documentation and Support Assets:**
-- `README.rdoc`: Root documentation source copied to `koans/README.rdoc`.
-- `koans/README.rdoc`: Learner-facing generated copy.
-- `DEPLOYING`: Deployment notes.
-- `src/GREED_RULES.txt` and `koans/GREED_RULES.txt`: Scoring project support text.
-- `src/example_file.txt` and `koans/example_file.txt`: File IO lesson support text.
+**Validation / Consistency:**
+- `rakelib/checks.rake`: `check:abouts` and `check:asserts`. Top-level `rake check`.
 
 ## Naming Conventions
 
 **Files:**
-- Koan topic files use `about_<topic>.rb`: `src/about_arrays.rb`, `src/about_keyword_arguments.rb`, `koans/about_triangle_project_2.rb`.
-- Project exercise files use concise snake_case names without `about_`: `src/triangle.rb`, `koans/triangle.rb`.
-- Test files use `<subject>_test.rb`: `tests/koans_cli_test.rb`, `tests/neo_output_test.rb`, `tests/check_test.rb`.
-- Rake extension files use `<task_area>.rake`: `rakelib/checks.rake`, `rakelib/test.rake`, `rakelib/run.rake`.
-- Generated and canonical pairs keep identical basenames between `src/` and `koans/`: `src/about_hashes.rb` maps to `koans/about_hashes.rb`.
+- Koans: `about_<topic>.rb` (snake_case, `about_` prefix is what `Dir['src/about_*.rb']` matches in `rakelib/checks.rake:6,23`).
+- Project tests: `<noun>_test.rb` (e.g. `koans_cli_test.rb`, `neo_output_test.rb`); `Rake::TestTask` glob is `tests/**/*_test.rb` (`rakelib/test.rake:5`).
+- Rake task files: `<concern>.rake`, one concern per file, auto-loaded from `rakelib/`.
+- Watchr config: `koans.watchr` (top-level lowercase, no extension change between `src/` and `koans/`).
+- Fixtures: descriptive snake_case (`example_file.txt`, `GREED_RULES.txt` — the latter intentionally upper-case to match in-game tone).
 
 **Directories:**
-- Top-level directories use lowercase names: `src/`, `koans/`, `tests/`, `rakelib/`, `download/`, `keynote/`.
-- GitHub workflow configuration follows GitHub's conventional path: `.github/workflows/`.
-- GSD planning artifacts live under `.planning/codebase/`.
+- All lowercase, single-word: `bin/`, `src/`, `koans/`, `tests/`, `rakelib/`, `download/`, `keynote/`.
 
-**Classes and Modules:**
-- Topic classes use `AboutCamelCase` and inherit from `Neo::Koan`: `AboutAsserts` in `src/about_asserts.rb`, `AboutTriangleProject` in `src/about_triangle_project.rb`.
-- Runtime classes live under the `Neo` namespace: `Neo::Sensei`, `Neo::Koan`, `Neo::ThePath` in `src/neo.rb`.
-- CLI singleton logic lives under `RubyKoansCLI` in `bin/koans`.
+**Ruby identifiers:**
+- Koan classes: `About<Topic>` (CamelCase, `About` prefix). Example: `class AboutAsserts < Neo::Koan` (`src/about_asserts.rb:6`).
+- Test methods: `test_<lowercase_phrase>` (matches the default `Neo::Koan.test_pattern = /^test_/` at `src/neo.rb:524-526`).
+- Helper methods: snake_case (`add_progress`, `walk_without_regenerating`, `koan_steps`).
+- Modules: PascalCase (`Neo`, `RubyKoansCLI`, `Koans`).
+- Constants: `SCREAMING_SNAKE_CASE` (`SRC_DIR`, `PROB_DIR`, `DOWNLOAD_DIR`, `ZIP_FILE`, `PROGRESS_FILE_NAME`, `KOANS_DIR`, `PATH_FILE`, `DEFAULT_PROGRESS_FILE`).
+- Placeholders: `__`, `___`, `____`, `_n_` (deliberately weird-looking; defined as top-level methods in `src/neo.rb:39-76`).
 
-**Methods:**
-- Koan steps use `test_<description>` so `Neo::Koan.method_added` collects them by default: `test_assert_truth` in `src/about_asserts.rb`, `test_equilateral_triangles_have_equal_sides` in `src/about_triangle_project.rb`.
-- CLI command methods use command names directly: `walk`, `watch`, `list`, `next_step`, `hint`, `reset` in `bin/koans`.
-- Predicate methods end with `?`: `Neo.simple_output`, `Neo::Sensei#failed?`, `Neo::Color.use_colors?`, `RubyKoansCLI.group_status` uses string status values.
+**Solution markers (in source comments):**
+- `#--` opens a "skip this in the generated koan" block.
+- `#++` closes it.
+- `# __` trailing comment is stripped by `Koans.remove_solution` (`Rakefile:30`).
 
 ## Where to Add New Code
 
-**New Koan Topic:**
-- Primary code: Add `src/about_<topic>.rb`.
-- Runtime order: Add `require 'about_<topic>'` to `src/path_to_enlightenment.rb`.
-- Generated learner copy: Run `rake gen` to create `koans/about_<topic>.rb`.
-- Tests/checks: Run `rake check`; `rakelib/checks.rake` expects every `src/about_*.rb` to be required.
-- Pattern: Define `class AboutTopic < Neo::Koan` and `def test_<behavior>` methods, as in `src/about_asserts.rb`.
+**A new koan topic:**
+- Primary code: `src/about_<topic>.rb` — start with `require File.expand_path(File.dirname(__FILE__) + '/neo')`, then `class About<Topic> < Neo::Koan`. Use `__(value)` / `_n_(value)` / `___(ExceptionClass)` for blanks; wrap multi-line answers with `#--` / `#++`.
+- Manifest: add `require 'about_<topic>'` to `src/path_to_enlightenment.rb` in the desired position (order = walk order).
+- Validation: `rake check:abouts` will warn if you forget the `require`; `rake check:asserts` will warn if any `assert` line lacks a placeholder.
+- Generated copy: `rake gen` (or `bin/koans walk`) will produce `koans/about_<topic>.rb` automatically.
 
-**New Project Exercise Supporting a Koan:**
-- Primary code: Add implementation source under `src/<exercise>.rb`, following `src/triangle.rb`.
-- Lesson code: Require it from the topic file with a current-directory-relative require, following `src/about_triangle_project.rb:4`.
-- Generated learner copy: Let `rake gen` copy `src/<exercise>.rb` to `koans/<exercise>.rb`.
-- Tests: Add regression coverage only if the project tooling or hidden source behavior needs protection; learner-facing assertions belong in `src/about_<topic>.rb`.
+**A new free-form exercise (like `triangle.rb`):**
+- Spec/tests: `src/about_<exercise>_project.rb` (and optionally `..._project_2.rb`).
+- Implementation stub: `src/<exercise>.rb` — leave a stub method body wrapped in `#--`/`#++`. Keep any error class outside the stripped block.
+- Wire into `src/path_to_enlightenment.rb`.
+- The about-file must `require './<exercise>'` (note the `./` prefix — it works because `path_to_enlightenment.rb` does `cd koans/` before running).
 
-**New CLI Command:**
-- Implementation: Add dispatch branch in `bin/koans:19` and a singleton method in `RubyKoansCLI`.
-- Help text: Update `bin/koans:356`.
-- Tests: Add subprocess coverage to `tests/koans_cli_test.rb` using `run_cli`.
-- State/config: Prefer environment-variable configuration only when commands must be scriptable, following `KOANS_PROGRESS_FILE` in `bin/koans:196`.
+**A new CLI verb on `bin/koans`:**
+- Add a `when "<verb>"` branch in the dispatcher (`bin/koans:18-40`).
+- Implement the verb as a `class << self` method.
+- Add a one-liner to `help_text` (`bin/koans:356-374`).
+- Test it with an Open3-based test in `tests/koans_cli_test.rb`.
 
-**New Rake Task:**
-- Implementation: Add task to `rakelib/<area>.rake` for modular tasks or to root `Rakefile` for generation/package tasks.
-- Tests: Add Minitest coverage in `tests/check_test.rb` or a new `tests/<area>_test.rb` when behavior matters.
-- CI: Include the task in `.github/workflows/ci.yml` only when every PR must run it.
+**A new Rake task:**
+- Pick a concern: `rakelib/checks.rake` (validation), `rakelib/run.rake` (running), `rakelib/test.rake` (test runners), or create a new `rakelib/<concern>.rake` (Rake auto-loads everything in `rakelib/`).
+- Tasks that touch the generation pipeline (zip, regen, gen, walk) belong in the top-level `Rakefile`, not `rakelib/`.
 
-**Runtime Behavior Change:**
-- Primary code: Change `src/neo.rb`.
-- Generated copy: Run `rake gen` so `koans/neo.rb` matches.
-- Tests: Add focused coverage to `tests/neo_output_test.rb` or a new runtime test file.
-- Tooling load: Preserve `NEO_DISABLE_END` semantics for any new definition-loading behavior.
+**A new internal project test:**
+- File: `tests/<thing>_test.rb`.
+- Top of file: `require_relative "test_helper"`.
+- Class: `class <Thing>Test < Minitest::Test` with `def test_*` methods.
+- For tests that shell out to `bin/koans`, follow the `Open3.capture3` + `KOANS_PROGRESS_FILE` pattern in `tests/koans_cli_test.rb:11-24`.
+- For tests that load `src/neo.rb`, set `ENV['NEO_DISABLE_END'] = 'true'` *before* the require (`tests/neo_output_test.rb:3`).
 
-**Generation Rule Change:**
-- Primary code: Update both `Koans.remove_solution` / `Koans.make_koan_file` in `Rakefile` and the matching CLI generation helpers in `bin/koans`.
-- Tests: Add or update CLI reset/generation tests in `tests/koans_cli_test.rb` and check-task tests if applicable.
-- Generated copy: Run `rake regen` only when intentionally replacing learner-facing generated files.
+**A new placeholder convention (e.g. `_____`):**
+- Add a top-level helper in `src/neo.rb` (alongside `__`, `_n_`, `___`).
+- Add a regex to `Koans.remove_solution` (`Rakefile:24-32`) **and** the duplicate in `RubyKoansCLI.remove_solution` (`bin/koans:347-354`). Both must be updated.
+- Add a check rule in `rakelib/checks.rake` if appropriate.
 
-**New Tests:**
-- Location: Add `tests/<subject>_test.rb`.
-- Setup: Require `tests/test_helper.rb` with `require_relative "test_helper"`.
-- CLI tests: Use `Open3.capture3` through the existing `run_cli` helper pattern in `tests/koans_cli_test.rb`.
-- Runtime tests: Set `ENV['NEO_DISABLE_END'] = 'true'` before requiring `src/neo.rb`, as in `tests/neo_output_test.rb`.
+**A new fixture file:**
+- Drop it in `src/<name>.txt` (or `.rb` if it's loadable code that should not be stripped).
+- The Rake file rule (`Rakefile:112-116`) generates `koans/<name>` from every `src/*`.
+- Files matching `/neo/` in basename get `cp`-ed verbatim; everything else goes through `make_koan_file`. If you have a non-koan file that must be byte-identical (like a `.txt` fixture), be aware that `make_koan_file` strips trailing `# __` comments and parenthesised placeholder calls, which is normally a no-op for plain text.
 
-**Utilities:**
-- CLI-only helpers: Keep inside `RubyKoansCLI` in `bin/koans`.
-- Runtime helpers for koan execution: Keep inside `Neo` modules/classes in `src/neo.rb`.
-- Rake-only helpers: Keep inside the `Koans` module in `Rakefile` or inside `rakelib/*.rake` namespaces.
-- Avoid adding a generic utility directory unless code is shared by at least two existing layers.
+**Watcher behaviour change:**
+- `bin/koans:185-190` (`watched_files_signature`) and `bin/koans:175-179` (`watch_interval`) are the knobs.
+- `koans.watchr` (root) and `koans/koans.watchr` are independent loop drivers; both shell to `bin/koans walk`. Keep them in sync.
+
+**Don't:**
+- Don't edit `koans/*.rb` and commit it — `.gitignore` line 10 (`koans/*`) silently drops the change.
+- Don't add new koans without a `require` in `path_to_enlightenment.rb`.
+- Don't add `puts` of expected/actual values to the failure path in `Neo::Sensei` — `tests/neo_output_test.rb` will fail.
 
 ## Special Directories
 
-**`koans/`:**
-- Purpose: Learner workspace generated from `src/`.
-- Generated: Yes.
-- Committed: Yes.
-- Safe modification: Learners edit answers in `koans/`; maintainers change source structure in `src/` and regenerate.
-
-**`src/`:**
-- Purpose: Canonical source of truth for lessons and runtime.
-- Generated: No.
-- Committed: Yes.
-- Safe modification: Use solution markers `#--` and `#++` for source-only answers that must disappear from generated koans.
+**`koans/` (generated working copy):**
+- Purpose: Where the learner edits.
+- Generated: Yes (by `rake gen`). Files matching `/neo/` are copied verbatim; everything else is run through `Koans.make_koan_file`.
+- Committed: No (`koans/*` in `.gitignore`). The repository works without it; first run regenerates.
+- Note: Sub-`Rakefile` and sub-`koans.watchr` exist so a learner who `cd`s into `koans/` has working ergonomics there.
 
 **`download/`:**
-- Purpose: Package output directory for `download/rubykoans.zip`.
-- Generated: Yes.
-- Committed: Directory may exist; package artifacts are build outputs.
-- Safe modification: Let `rake package` create archive outputs.
+- Purpose: Distribution artifacts.
+- Generated: Yes (`rake zip` writes `download/rubykoans.zip`).
+- Committed: Yes (current zip is in the tree). `rake clobber_zip` removes it.
+
+**`keynote/`:**
+- Purpose: Historical artifact (presentation deck).
+- Generated: No.
+- Committed: Yes.
+
+**`.planning/`:**
+- Purpose: GSD planning + codebase-mapping output.
+- Generated: Yes (by GSD commands).
+- Committed: Yes (orchestrator commits these).
 
 **`rakelib/`:**
-- Purpose: Auto-loaded Rake task extensions.
+- Purpose: Auto-loaded `.rake` files (Rake convention).
 - Generated: No.
 - Committed: Yes.
-- Safe modification: Keep task names explicit and add tests for task behavior that affects CI.
 
 **`tests/`:**
-- Purpose: Minitest regression suite for project behavior, not learner koan answers.
+- Purpose: Project's internal minitest suite (NOT the learner's koans).
 - Generated: No.
 - Committed: Yes.
-- Safe modification: Test public command behavior, runtime output contracts, and Rake task checks.
-
-**`.github/workflows/`:**
-- Purpose: CI definitions.
-- Generated: No.
-- Committed: Yes.
-- Safe modification: Keep the verification command aligned with available Rake tasks, currently `bundle exec rake test check`.
-
-**`.planning/codebase/`:**
-- Purpose: GSD codebase analysis documents.
-- Generated: Yes.
-- Committed: Depends on project workflow.
-- Safe modification: Update through codebase mapping workflows rather than hand-editing stale architectural claims.
 
 ---
 

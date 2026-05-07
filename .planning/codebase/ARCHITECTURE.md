@@ -6,259 +6,332 @@
 ## System Overview
 
 ```text
-┌─────────────────────────────────────────────────────────────┐
-│                  User Commands / Automation                  │
-├──────────────────┬──────────────────┬───────────────────────┤
-│   `bin/koans`    │    `Rakefile`     │  `.github/workflows/` │
-│  CLI commands    │  classic tasks    │   CI test/check flow  │
-└────────┬─────────┴────────┬─────────┴──────────┬────────────┘
-         │                  │                     │
-         ▼                  ▼                     ▼
-┌─────────────────────────────────────────────────────────────┐
-│                 Source-to-exercise generation                │
-│ `src/*` ──remove solutions──▶ `koans/*`                      │
-│ `Rakefile`, `bin/koans`                                      │
-└─────────────────────────────────────────────────────────────┘
-         │
-         ▼
-┌─────────────────────────────────────────────────────────────┐
-│                 Koan runtime and lesson suite                │
-│ `koans/path_to_enlightenment.rb` loads `koans/about_*.rb`    │
-│ `koans/neo.rb` records progress and stops on first failure   │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                              Learner Entry Points                             │
+├───────────────────────┬───────────────────────┬──────────────────────────────┤
+│  rake (default)       │  bin/koans <cmd>      │  bin/koans watch /           │
+│  `Rakefile`           │  `bin/koans`          │  rake watch / koans.watchr   │
+└──────────┬────────────┴──────────┬────────────┴──────────────┬───────────────┘
+           │                       │                            │
+           │ invokes                │ shells out to              │ polls files
+           ▼                       ▼                            ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                       Generation Pipeline (Rake)                              │
+│  `Rakefile` :gen / :regen      `rakelib/checks.rake`   `rakelib/test.rake`    │
+│  reads `src/*` -> writes `koans/*` via `Koans.make_koan_file`                 │
+└──────────────────────────┬───────────────────────────────────────────────────┘
+                           │ generates / refreshes
+                           ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                     Student-Facing Working Copy                               │
+│  `koans/about_*.rb`  `koans/neo.rb`  `koans/path_to_enlightenment.rb`         │
+│  `koans/triangle.rb` `koans/Rakefile` `koans/.path_progress`                  │
+└──────────────────────────┬───────────────────────────────────────────────────┘
+                           │ ruby path_to_enlightenment.rb
+                           ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                        Neo Test Runner (in-process)                           │
+│  `koans/neo.rb` -> module Neo: { Koan, Sensei, ThePath, Assertions, Color }   │
+│  END {} block walks subclasses in registration order, observes failures,      │
+│  records progress to `koans/.path_progress`                                   │
+└──────────────────────────┬───────────────────────────────────────────────────┘
+                           │ stdout / exit status
+                           ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                         Internal Project Tests                                │
+│  `tests/koans_cli_test.rb`  `tests/neo_output_test.rb`  `tests/check_test.rb` │
+│  `tests/test_helper.rb` (loads Rake, minitest)                                │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Component Responsibilities
 
 | Component | Responsibility | File |
 |-----------|----------------|------|
-| CLI command dispatcher | Parses `walk`, `watch`, `list`, `next`, `hint`, `reset`, and `help`; returns process exit codes. | `bin/koans:15` |
-| Koan generator | Copies `src/` files into `koans/` while stripping solution-only regions and answer arguments. | `Rakefile:17`, `bin/koans:329` |
-| Rake orchestration | Defines default `rake` flow, packaging, regeneration, checks, and source-run tasks. | `Rakefile:57`, `Rakefile:99`, `Rakefile:118` |
-| Path loader | Defines the ordered lesson sequence by requiring topic files from the current load path. | `src/path_to_enlightenment.rb:3`, `koans/path_to_enlightenment.rb:3` |
-| Koan runtime | Supplies fill-in placeholders, assertions, progress tracking, failure output, and test discovery. | `src/neo.rb:15`, `src/neo.rb:91` |
-| Koan classes | Hold one topic per `About*` class, with each `test_*` method becoming one step on the path. | `src/about_asserts.rb:6`, `src/about_triangle_project.rb:6` |
-| Project exercises | Provide code that learners complete outside the `About*` classes. | `src/triangle.rb:16`, `koans/triangle.rb:16` |
-| Consistency checks | Verifies path completeness and missing answer placeholders before CI passes. | `rakelib/checks.rake:1` |
-| Minitest suite | Tests CLI behavior, output behavior, and check tasks. | `tests/koans_cli_test.rb:7`, `tests/neo_output_test.rb:6`, `tests/check_test.rb:3` |
-| CI pipeline | Runs tests and checks against supported Ruby versions. | `.github/workflows/ci.yml:5` |
+| Top-level Rakefile | Orchestrate generation, default `walk_the_path`, packaging, watch alias | `Rakefile` |
+| `Koans` module | Solution-stripping logic (`remove_solution`, `make_koan_file`) used by `:gen` | `Rakefile` (lines 17-55) |
+| Modern CLI | `walk`/`watch`/`list`/`next`/`hint`/`reset`/`help` dispatcher | `bin/koans` |
+| Watchr config (root) | Tells `watchr` to re-run `bin/koans walk` on changes inside `koans/` | `koans.watchr` |
+| Watchr config (student) | Same loop, but launched from inside `koans/` (uses `../bin/koans`) | `koans/koans.watchr`, `src/koans.watchr` |
+| Canonical sources | Master koans with embedded answers and `#--`/`#++` solution blocks | `src/about_*.rb`, `src/triangle.rb` |
+| Source manifest | Defines koan order via `require` lines, gated by `in_ruby_version` | `src/path_to_enlightenment.rb` |
+| Neo runner | `Neo::Koan` (test base), `Neo::Sensei` (reporter), `Neo::ThePath` (driver), `Neo::Assertions` (matchers) | `src/neo.rb` |
+| Generated working copy | Student-editable koans (answers stripped) plus a verbatim `neo.rb`/`path_to_enlightenment.rb` | `koans/about_*.rb`, `koans/neo.rb`, `koans/path_to_enlightenment.rb` |
+| Student Rakefile | `task :test` that runs `path_to_enlightenment.rb` from inside `koans/` | `koans/Rakefile` |
+| Triangle exercise | Free-form module the learner has to implement | `src/triangle.rb` -> `koans/triangle.rb` |
+| Progress ledger | Comma-separated list of pass counts written by `Neo::Sensei#add_progress`, read by CLI `next`/`hint` | `koans/.path_progress` |
+| Helper rake tasks | `rake check:abouts`, `rake check:asserts`, internal `rake test` | `rakelib/checks.rake`, `rakelib/test.rake`, `rakelib/run.rake` |
+| Project-test helper | Loads Rakefile + minitest for `check_test.rb` | `tests/test_helper.rb` |
+| CLI integration tests | Spawn `bin/koans` via `Open3` and assert on stdout | `tests/koans_cli_test.rb` |
+| Neo output tests | Verify `Sensei#guide_through_error` never leaks the answer | `tests/neo_output_test.rb` |
+| Assertion sanity tests | Run `rake check:abouts`/`check:asserts` and capture stdout | `tests/check_test.rb` |
+| Distribution zip | Packaged koans for download | `download/rubykoans.zip` (built by `rake zip`) |
 
 ## Pattern Overview
 
-**Overall:** Generated exercise suite with a small custom test runner.
+**Overall:** Source-to-exercise generation pipeline with a small custom in-process test runner ("Neo") and a thin operational layer (Rake tasks + a Ruby CLI + a watchr loop).
 
 **Key Characteristics:**
-- Treat `src/` as canonical lesson source and `koans/` as the learner-editable generated workspace.
-- Use Ruby file loading and class hooks instead of a conventional test framework for koan execution.
-- Run one ordered path and stop at the first failing koan to preserve the learning loop.
-- Keep tool-facing regression tests in `tests/` with Minitest, separate from learner koans in `src/` and `koans/`.
-- Keep command automation thin: `bin/koans` and `Rakefile` delegate the lesson runtime to `path_to_enlightenment.rb` and `neo.rb`.
+- The codebase has a **dual-tree layout**: `src/` (canonical, with answers) is the build input; `koans/` (generated, answer-stripped) is what learners edit. The build is line-oriented stripping, not templating.
+- The test runner is **hand-rolled, not minitest/RSpec**: `Neo::Koan` registers subclasses via `inherited`, captures test method names via `method_added`, and walks them inside an `END` block defined in `koans/neo.rb` (same `neo.rb` as `src/neo.rb`, copied verbatim by the generator).
+- Execution is **fail-fast**: `Neo::Sensei#observe` calls `throw :neo_exit` on the first failure, so the path stops at the first koan that needs meditation.
+- The **modern `bin/koans` CLI** does not replace the Rake flow — it wraps it. `walk`/`watch` shell out to `rake gen`, then run `koans/path_to_enlightenment.rb` directly. `list`/`next`/`hint` introspect koan order without running tests by loading `src/path_to_enlightenment.rb` with `NEO_DISABLE_END=true`.
+- **Progress is a file, not a database**: `koans/.path_progress` accumulates pass counts (e.g. `0,0,0,0,0,0,0,0`). `Neo::Sensei` and `bin/koans` both read/write it, and the CLI honours `KOANS_PROGRESS_FILE` so tests can isolate state.
+- Two `koans.watchr` files exist (`koans.watchr` at the repo root, `koans/koans.watchr`); both shell out to `bin/koans walk` so the watcher contract is uniform regardless of where it is launched.
 
 ## Layers
 
-**Command Layer:**
-- Purpose: Provide user-facing and automation-facing entry points.
-- Location: `bin/koans`, `Rakefile`, `koans/Rakefile`, `src/Rakefile`, `koans.watchr`, `.github/workflows/ci.yml`.
-- Contains: CLI command parsing, Rake tasks, watch loops, CI workflow configuration.
-- Depends on: `src/`, `koans/`, `rake`, `minitest`, Ruby stdlib (`FileUtils`, `RbConfig`, `Open3`, `Tmpdir`).
-- Used by: Learners running `bin/koans walk`, maintainers running `rake test check`, CI running `bundle exec rake test check`.
+**Entry / Orchestration Layer:**
+- Purpose: Translate a learner's intent ("walk the path", "watch", "reset hashes") into a concrete generation + run sequence.
+- Location: `Rakefile`, `bin/koans`, `koans.watchr`, `koans/koans.watchr`.
+- Contains: Rake tasks, `RubyKoansCLI` module, watchr blocks.
+- Depends on: Generation Layer (it invokes `:gen`/`:regen` or replicates `make_koan_file`), Runner Layer (it `system`s `path_to_enlightenment.rb`).
+- Used by: Humans and the watcher loop.
 
 **Generation Layer:**
-- Purpose: Produce clean exercise files from complete source files.
-- Location: `Rakefile:20`, `Rakefile:34`, `bin/koans:329`, `bin/koans:347`.
-- Contains: `Koans.remove_solution`, `Koans.make_koan_file`, `RubyKoansCLI.make_koan_file`, `RubyKoansCLI.remove_solution`.
-- Depends on: Source files in `src/`, destination directory `koans/`, solution markers `#--` and `#++`, placeholders `__`, `___`, `____`, `_n_`.
-- Used by: `rake gen`, `rake regen`, `rake`, `bin/koans walk`, `bin/koans reset`, `bin/koans watch`.
+- Purpose: Convert `src/*` into `koans/*` by stripping answers between `#--` / `#++` markers and replacing solution placeholders (`__(value)` -> `__`, `_n_(value)` -> `_n_`, etc.).
+- Location: `Rakefile` lines 17-55 (`Koans.remove_solution`, `Koans.make_koan_file`), `Rakefile` lines 99-116 (`:gen`, `:regen`, file rules), `bin/koans` lines 329-354 (a small re-implementation used by `bin/koans reset <file>`).
+- Contains: `Koans` module (Rake DSL), `RubyKoansCLI.make_koan_file` / `RubyKoansCLI.remove_solution` (CLI duplicate).
+- Depends on: `src/*` (read), `koans/*` (write).
+- Used by: `rake gen`, `rake regen`, `rake walk_the_path`, `bin/koans walk`, `bin/koans watch`, `bin/koans reset`.
 
-**Lesson Definition Layer:**
-- Purpose: Define lesson order and each koan topic.
-- Location: `src/path_to_enlightenment.rb`, `koans/path_to_enlightenment.rb`, `src/about_*.rb`, `koans/about_*.rb`.
-- Contains: Ordered `require` statements, Ruby-version-gated koans, `About* < Neo::Koan` classes, `test_*` methods.
-- Depends on: `neo.rb` loaded by each topic file, local project files such as `src/triangle.rb`.
-- Used by: `Neo::ThePath`, `RubyKoansCLI.koan_steps`, Rake tasks that run `path_to_enlightenment.rb`.
+**Runner Layer (Neo):**
+- Purpose: Drive each koan's test methods, format failures, persist progress, render the end-of-path artwork.
+- Location: `src/neo.rb` (canonical), copied verbatim into `koans/neo.rb` by the generator (the `Koans.make_koan_file` branch on line 35 of `Rakefile` does a `cp` when the filename matches `/neo/`).
+- Contains: `Neo::Koan`, `Neo::Sensei`, `Neo::ThePath`, `Neo::Assertions`, `Neo::Color`, top-level helpers (`__`, `_n_`, `___`, `____`, `in_ruby_version`, `before_ruby_version`).
+- Depends on: standard library only (`Gem::Version`, optional `win32console`).
+- Used by: `koans/path_to_enlightenment.rb` (which `require`s every `about_*` file; each file `require`s `neo`, registering itself as a `Neo::Koan` subclass; the `END` block at the bottom of `neo.rb` then walks all subclasses in registration order).
 
-**Runtime Layer:**
-- Purpose: Execute koan steps, capture failures, format feedback, and remember progress.
-- Location: `src/neo.rb`, `koans/neo.rb`.
-- Contains: `Neo::Assertions`, `Neo::Sensei`, `Neo::Koan`, `Neo::ThePath`, `Neo::Color`, fill-in helper methods.
-- Depends on: Ruby `END` hook, `ARGV`, environment variables (`NEO_DISABLE_END`, `SIMPLE_KOAN_OUTPUT`, `NO_COLOR`, `ANSI_COLOR`), `.path_progress` file.
-- Used by: Every `about_*.rb` class and every path execution.
-
-**Regression Test Layer:**
-- Purpose: Protect project tooling and runtime behavior without using the koan runner.
-- Location: `tests/test_helper.rb`, `tests/*_test.rb`, `rakelib/test.rake`.
-- Contains: Minitest tests, subprocess CLI assertions, Rake task assertions.
-- Depends on: `minitest`, `rake`, Ruby stdlib, `bin/koans`, `src/neo.rb`.
-- Used by: `rake test`, `bundle exec rake test`, CI workflow.
+**Project-test Layer:**
+- Purpose: Verify this fork's additions (CLI, no-spoiler error formatting, consistency checks) without running the koans themselves.
+- Location: `tests/`.
+- Contains: minitest test cases.
+- Depends on: minitest, `Rake.application.load_rakefile`, `Open3` for CLI subprocess tests.
+- Used by: `rake test` (defined in `rakelib/test.rake`).
 
 ## Data Flow
 
-### Primary Request Path
+### Primary Request Path: `rake` (or `rake walk_the_path`)
 
-1. User runs the default task or CLI (`Rakefile:57`, `bin/koans:16`).
-2. Generation runs before execution (`Rakefile:62`, `bin/koans:43`).
-3. Source files from `src/` are copied to `koans/` with solutions stripped (`Rakefile:112`, `Rakefile:114`, `bin/koans:335`).
-4. Execution changes into `koans/` and runs `path_to_enlightenment.rb` (`Rakefile:63`, `bin/koans:46`).
-5. `koans/path_to_enlightenment.rb` adds its directory to `$LOAD_PATH` and requires topic files in order (`koans/path_to_enlightenment.rb:3`).
-6. Each topic file requires `koans/neo.rb`, then defines an `About* < Neo::Koan` class (`koans/about_asserts.rb:4`, `koans/about_asserts.rb:6`).
-7. `Neo::Koan.inherited` collects each koan class and `Neo::Koan.method_added` collects `test_*` methods (`koans/neo.rb:481`, `koans/neo.rb:485`).
-8. The `END` block invokes `Neo::Koan.command_line(ARGV)` and `Neo::ThePath.new.walk` (`koans/neo.rb:557`).
-9. `Neo::ThePath#each_step` instantiates each test method in order and yields it to `Neo::Sensei` (`koans/neo.rb:543`).
-10. `Neo::Koan#meditate` runs setup, the test method, and teardown, then stores the failure if one occurs (`koans/neo.rb:463`).
-11. `Neo::Sensei#observe` increments progress for passing steps or records the first failing step and throws `:neo_exit` (`koans/neo.rb:240`).
-12. `Neo::Sensei#instruct` prints either guidance for the first failure or the completion screen (`koans/neo.rb:264`).
+1. Default Rake task fires `walk_the_path` (`Rakefile:60`).
+2. `walk_the_path` invokes `:gen` (`Rakefile:62`), which has a Rake file rule per `src/*` declaring `koans/<name>` depends on `[koans/, src/<name>]` (`Rakefile:112-116`).
+3. For each out-of-date file, `Koans.make_koan_file` (`Rakefile:34`) opens the source and copies lines while toggling state on `#--` (skip) and `#++` (resume); inside `:copy` state it rewrites placeholder calls via `Koans.remove_solution` (`Rakefile:24-32`). Files matching `/neo/` are copied verbatim (so `koans/neo.rb` is byte-identical to `src/neo.rb`).
+4. `cd PROB_DIR` then `ruby 'path_to_enlightenment.rb'` (`Rakefile:64-66`).
+5. `koans/path_to_enlightenment.rb` adds `koans/` to `$LOAD_PATH` and `require`s every `about_*` file in order (`koans/path_to_enlightenment.rb:5-44`). Each `about_*` file does `require File.expand_path(File.dirname(__FILE__) + '/neo')` and declares `class AboutXxx < Neo::Koan ... end`.
+6. `Neo::Koan.inherited` adds the subclass to `Neo::Koan.subclasses` (`src/neo.rb:481-483`). `Neo::Koan.method_added` collects every `def test_...` into `testmethods` (`src/neo.rb:485-487`).
+7. After `path_to_enlightenment.rb` finishes loading, the `END` block at `src/neo.rb:557-562` runs `Neo::ThePath.new.walk`.
+8. `Neo::ThePath#walk` instantiates `Neo::Sensei` and iterates over `Neo::Koan.subclasses` (i.e. registration order, which is `require` order from the manifest), then over each subclass's `testmethods` (i.e. source order). For every step it calls `koan.new(method_name, ...).meditate` (`src/neo.rb:534-554`).
+9. `Neo::Koan#meditate` runs `setup`, `send(name)`, `teardown`, capturing any `StandardError` or `Neo::Sensei::FailedAssertionError` into `@failure` (`src/neo.rb:463-477`).
+10. `Sensei#observe` increments `pass_count` on success or, on failure, records the pass count to `.path_progress`, stores the failed step, and `throw :neo_exit` to short-circuit the walk (`src/neo.rb:240-254`).
+11. `Sensei#instruct` prints either the artistic end screen (path complete) or the encouragement + masked-failure message + zen statement + progress bar (`src/neo.rb:264-293`).
 
-### CLI Introspection Flow
+### Secondary Flow: `bin/koans walk`
 
-1. User runs `bin/koans list`, `bin/koans next`, or `bin/koans hint` (`bin/koans:24`, `bin/koans:27`, `bin/koans:29`).
-2. `RubyKoansCLI.koan_steps` loads source definitions with `NEO_DISABLE_END=true` so the runtime `END` hook does not walk the path (`bin/koans:206`, `bin/koans:221`).
-3. The CLI reads the ordered require list from `src/path_to_enlightenment.rb` (`bin/koans:238`).
-4. The CLI matches loaded `Neo::Koan.subclasses` to source file names using method source locations (`bin/koans:229`, `bin/koans:242`).
-5. `list` groups steps by koan file and prints gate status based on `.path_progress` (`bin/koans:72`, `bin/koans:250`, `bin/koans:268`).
-6. `next` prints the current step label and line location (`bin/koans:90`, `bin/koans:281`, `bin/koans:285`).
-7. `hint` scans comments immediately above the source method and excludes marker comments (`bin/koans:104`, `bin/koans:301`).
+1. `RubyKoansCLI.call` dispatches `"walk"` -> `walk` (`bin/koans:16-47`).
+2. `walk` runs `rake gen` from the project root via `system` (`bin/koans:43-46`, `bin/koans:155-157`).
+3. On success it shells out to `RbConfig.ruby` running `path_to_enlightenment.rb` from inside `koans/` (`bin/koans:46`, `bin/koans:163-169`). The classic Neo `END` block then takes over as in the primary flow.
+4. The CLI returns the child process's exit status to the caller, which exits with the same code (`bin/koans:21-22`, `bin/koans:163-169`).
 
-### Reset Flow
+### Secondary Flow: `bin/koans watch` (and `rake watch` / `koans.watchr`)
 
-1. User runs `bin/koans reset <about_file|all>` (`bin/koans:126`).
-2. `reset all` delegates to `rake regen` in the project root (`bin/koans:133`).
-3. Single-file reset normalizes a safe file name and maps `src/<file>` to `koans/<file>` (`bin/koans:137`, `bin/koans:320`).
-4. The CLI regenerates only that file with the same stripping algorithm used by `rake gen` (`bin/koans:146`, `bin/koans:329`).
+1. `rake watch` simply shells out: `ruby 'bin/koans', 'watch'` (`Rakefile:73-75`).
+2. `RubyKoansCLI.watch` regenerates once, prints the "Sensei is watching" banner, traps `INT` for a polite goodbye, then loops (`bin/koans:49-70`).
+3. Each iteration computes `watched_files_signature` (sorted `[path, mtime, size]` tuples for `koans/*.{rb,txt}`), and when it changes it calls `walk_without_regenerating` (`bin/koans:159-161`, `185-190`).
+4. Sleep duration comes from `KOANS_WATCH_INTERVAL` (default `0.5s`); clear-screen behaviour respects `KOANS_NO_CLEAR` (`bin/koans:175-183`).
+5. `koans.watchr` (root) and `koans/koans.watchr` are alternative wrappers that the user runs under the `watchr` gem; both ultimately `system 'ruby bin/koans walk'` (or `../bin/koans walk` from inside `koans/`).
+
+### Secondary Flow: `bin/koans list` / `next` / `hint`
+
+1. `RubyKoansCLI.koan_steps` lazily loads the entire path with `NEO_DISABLE_END=true` (`bin/koans:206-227`). This loads `src/path_to_enlightenment.rb` from inside `src/`, which `require`s every `about_*` file but skips the `END` block in `neo.rb`, so no tests run.
+2. `RubyKoansCLI.ordered_koans` reorders `Neo::Koan.subclasses` by re-reading the `require` order from `src/path_to_enlightenment.rb` (`bin/koans:229-248`). For each subclass it walks `testmethods` to produce a flat list of `{class_name, file, method_name}` steps.
+3. `progress_count` parses `koans/.path_progress` (or `KOANS_PROGRESS_FILE` if set) and takes the last comma-separated entry's integer value (`bin/koans:200-204`).
+4. `list` groups steps by file and prints `opened` / `next` / `waiting` per group (`bin/koans:72-88`, `250-279`).
+5. `next` prints the current step's label + its file:line, derived by scanning the koan file for `def <method_name>` (`bin/koans:90-102`, `285-299`).
+6. `hint` finds the comment block immediately above the current method definition in `src/<file>` and prints it without the answer (`bin/koans:104-124`, `301-318`).
+
+### Secondary Flow: `bin/koans reset <file|all>`
+
+1. `reset all` -> `rake regen` from the project root (`bin/koans:133-135`); this nukes `koans/` (`Rakefile:104-106`) and regenerates everything.
+2. `reset <about_file>` normalises the target via `normalize_target_file` (rejects path traversal and unsafe characters: `\A[\w.\-]+\z`) (`bin/koans:320-327`), then re-runs `make_koan_file` for that single file (`bin/koans:126-153`, `329-345`).
+3. The CLI's `make_koan_file`/`remove_solution` are line-for-line copies of the `Koans` module in the top-level `Rakefile`, kept so `bin/koans reset` works without invoking Rake for a single-file refresh.
+
+### Secondary Flow: Internal `rake test`
+
+1. `rakelib/test.rake` declares a `Rake::TestTask` over `tests/**/*_test.rb`.
+2. `tests/test_helper.rb` requires `minitest/autorun`, `rake`, `stringio`, then `Rake.application.load_rakefile` so `check_test.rb` can invoke real Rake tasks.
+3. `tests/koans_cli_test.rb` spawns `bin/koans` via `Open3.capture3`, asserting on stdout/stderr/exit status, with progress isolated per test by `KOANS_PROGRESS_FILE`.
+4. `tests/neo_output_test.rb` requires `src/neo.rb` directly with `NEO_DISABLE_END=true` and asserts that `Sensei#guide_through_error` masks expected/actual values for `FailedAssertionError`.
+5. `tests/check_test.rb` invokes `Rake::Task['check:asserts']` and `Rake::Task['check:abouts']` and asserts the captured stdout contains `OK`.
 
 **State Management:**
-- Progress state lives in `koans/.path_progress` by default and can be redirected with `KOANS_PROGRESS_FILE` (`src/neo.rb:217`, `bin/koans:196`).
-- Runtime discovery state lives in class instance variables on `Neo::Koan` (`src/neo.rb:510`, `src/neo.rb:516`, `src/neo.rb:520`, `src/neo.rb:524`).
-- CLI step metadata is memoized in `RubyKoansCLI.koan_steps` (`bin/koans:206`).
-- Generation state is file-system state: canonical inputs in `src/`, generated outputs in `koans/`, package output in `download/rubykoans.zip` (`Rakefile:6`, `Rakefile:7`, `Rakefile:13`).
+- Source-of-truth state lives on disk: `src/*` (immutable input), `koans/*` (mutable working copy, the learner's edits live here), `koans/.path_progress` (append-only-ish ledger of pass counts).
+- In-process state is module-level on `Neo::Koan` (`@subclasses`, `@test_methods`, `@tests_disabled`, `@test_pattern`) and on `Neo::Sensei` instances (per-walk).
+- `bin/koans` memoises `@koan_steps` for the lifetime of a single CLI invocation (`bin/koans:207`).
 
 ## Key Abstractions
 
-**`Neo::Koan`:**
-- Purpose: Base class for all koan topic classes and registry for ordered test methods.
-- Examples: `src/neo.rb:436`, `src/about_asserts.rb:6`, `src/about_triangle_project.rb:6`.
-- Pattern: Hook-based registry via `inherited` and `method_added`; instance execution via `meditate`.
+**`Neo::Koan` (test base class):**
+- Purpose: Declarative test container; subclasses register themselves and their `test_*` methods automatically.
+- Examples: `src/about_asserts.rb` (`class AboutAsserts < Neo::Koan`), every `src/about_*.rb`.
+- Pattern: Self-registering test class via `inherited` hook + `method_added` filter (`src/neo.rb:480-531`). No external test framework required.
 
-**`Neo::Sensei`:**
-- Purpose: Observer and reporter for path execution, including progress recording and failure guidance.
-- Examples: `src/neo.rb:205`, `src/neo.rb:240`, `src/neo.rb:264`.
-- Pattern: Stateful runner collaborator; `Neo::ThePath` delegates pass/fail interpretation to it.
+**`Neo::Sensei` (reporter / progress recorder):**
+- Purpose: Watches each step, prints colorised observations, persists pass count, renders the end screen, masks the failing assertion's expected/actual values.
+- Examples: `src/neo.rb:205-433`.
+- Pattern: Stateful observer that `throw :neo_exit` on first failure to short-circuit the walk.
 
-**`Neo::ThePath`:**
-- Purpose: Iterates through every collected koan method in the required order and stops on first failure.
-- Examples: `src/neo.rb:534`, `src/neo.rb:543`.
-- Pattern: Enumerator-like orchestration using `catch(:neo_exit)` and `throw :neo_exit`.
+**`Neo::ThePath` (walker):**
+- Purpose: Iterate `Neo::Koan.subclasses` in registration order and ask each koan to `meditate`.
+- Examples: `src/neo.rb:534-554`.
+- Pattern: Catch/throw-based early termination.
 
-**Fill-in placeholders:**
-- Purpose: Represent answers that generation strips from learner files while preserving complete source files.
-- Examples: `src/neo.rb:39`, `src/neo.rb:48`, `src/neo.rb:57`, `src/about_asserts.rb:36`.
-- Pattern: Top-level helper methods available to all koan files after `neo.rb` is required.
+**`Neo::Assertions` (matchers):**
+- Purpose: Replacement for minitest's matchers (`assert`, `assert_equal`, `assert_match`, `assert_raise`, `assert_nothing_raised`, etc.) so the koans never depend on a third-party assertion library.
+- Examples: `src/neo.rb:147-203`.
+- Pattern: Failure raises a custom `FailedAssertionError`, which `Sensei#guide_through_error` recognises so it can hide the answer.
 
-**Solution markers:**
-- Purpose: Separate hidden source-only implementation from learner-visible exercise content.
-- Examples: `src/about_asserts.rb:10`, `src/about_asserts.rb:13`, `src/triangle.rb:18`, `src/triangle.rb:23`.
-- Pattern: Line-state stripping in `Koans.make_koan_file` and `RubyKoansCLI.make_koan_file`.
+**Solution placeholders (`__`, `___`, `____`, `_n_`):**
+- Purpose: Visible blanks the learner replaces; in `src/`, the same identifiers are *function calls* with the answer as the argument (`__(2)`, `___(NoMethodError)`), so the source koans pass when run from `src/`.
+- Examples: top-level definitions in `src/neo.rb:39-76`; usage in every `src/about_*.rb`.
+- Pattern: The build pipeline strips the parenthesised argument (regex in `Koans.remove_solution`, `Rakefile:24-32`), turning `__(2)` into `__`, which the runtime defines as `"FILL ME IN"`.
 
-**`RubyKoansCLI`:**
-- Purpose: Command facade around generation, execution, introspection, hints, and reset.
-- Examples: `bin/koans:8`, `bin/koans:16`, `bin/koans:356`.
-- Pattern: Module singleton (`class << self`) with private-by-convention command helpers.
+**`#--` / `#++` solution markers:**
+- Purpose: Mark blocks of canonical source that exist only to make the koans pass in `src/` and that must be omitted from the generated working copy.
+- Examples: `src/about_asserts.rb:10-17`, `src/triangle.rb:18-23`, `src/about_dice_project.rb:9-17`.
+- Pattern: State machine in `Koans.make_koan_file` (`Rakefile:38-53`) toggles `:copy`/`:skip`.
+
+**`RubyKoansCLI` (command dispatcher):**
+- Purpose: Single-file Ruby module that exposes the modern verbs (`walk`, `watch`, `list`, `next`, `hint`, `reset`, `help`).
+- Examples: `bin/koans:8-376`.
+- Pattern: Module-level singleton (`class << self`) with a `call(argv)` entry point.
 
 ## Entry Points
 
-**Default Rake path walk:**
-- Location: `Rakefile:57`.
-- Triggers: `rake` or `bundle exec rake` from project root.
-- Responsibilities: Invoke `gen`, change into `koans/`, run `path_to_enlightenment.rb`.
+**`rake` / `rake walk_the_path` / `rake walk`:**
+- Location: `Rakefile:57-70`.
+- Triggers: User runs `rake` from the project root.
+- Responsibilities: Generate koans, then walk the path until first failure.
 
-**CLI path walk:**
-- Location: `bin/koans:43`.
-- Triggers: `bin/koans`, `bin/koans walk`, `bin/koans run`, `bin/koans meditate`.
-- Responsibilities: Generate koans and run the generated path with the active Ruby executable.
+**`rake gen` / `rake regen` / `rake clobber_koans`:**
+- Location: `Rakefile:99-116`.
+- Triggers: Explicit invocation, or as a dependency of `walk_the_path`.
+- Responsibilities: Build/rebuild the `koans/` working copy from `src/`.
 
-**CLI watch mode:**
-- Location: `bin/koans:49`.
-- Triggers: `bin/koans watch` or `rake watch` (`Rakefile:73`).
-- Responsibilities: Regenerate before watching, rerun the path when `koans/*.{rb,txt}` changes, handle `Ctrl-C`.
+**`rake watch`:**
+- Location: `Rakefile:72-75`.
+- Triggers: User runs `rake watch`.
+- Responsibilities: Delegates to `bin/koans watch`.
 
-**CLI metadata commands:**
-- Location: `bin/koans:72`, `bin/koans:90`, `bin/koans:104`.
-- Triggers: `bin/koans list`, `bin/koans next`, `bin/koans hint`.
-- Responsibilities: Load source definitions without runtime execution and report progress-aware guidance.
+**`rake test` / `rake check`:**
+- Location: `rakelib/test.rake:3-7`, `rakelib/checks.rake:47-48`.
+- Triggers: `rake test` (this fork's project tests), `rake check` (consistency checks).
+- Responsibilities: Run minitest suite under `tests/`; verify `path_to_enlightenment.rb` requires every about file and that asserts have `__`/`_n_` placeholders.
 
-**CLI reset command:**
-- Location: `bin/koans:126`.
-- Triggers: `bin/koans reset all` or `bin/koans reset about_hashes`.
-- Responsibilities: Regenerate all koans through Rake or regenerate one safe target file.
+**`rake zip` / `rake package` / `rake upload`:**
+- Location: `Rakefile:80-97`.
+- Triggers: Distribution maintenance.
+- Responsibilities: Build `download/rubykoans.zip` from `koans/*`; optionally `scp` it.
 
-**Direct path execution:**
-- Location: `src/path_to_enlightenment.rb`, `koans/path_to_enlightenment.rb`.
-- Triggers: `ruby path_to_enlightenment.rb` inside `src/` or `koans/`.
-- Responsibilities: Load koans in order and let `neo.rb` run the `END` hook.
+**`bin/koans <command>`:**
+- Location: `bin/koans:1-378` (entry: `RubyKoansCLI.call(ARGV)` on line 378).
+- Triggers: User runs `bin/koans walk|watch|list|next|hint|reset|help`.
+- Responsibilities: Modern CLI dispatcher; every command exits with an explicit status code.
 
-**Regression tests:**
-- Location: `rakelib/test.rake:3`, `tests/test_helper.rb:1`.
-- Triggers: `rake test`, `bundle exec rake test`, CI workflow.
-- Responsibilities: Run Minitest files matching `tests/**/*_test.rb`.
+**`koans.watchr` (root) and `koans/koans.watchr`:**
+- Location: `koans.watchr:1-11`, `koans/koans.watchr:1-11`.
+- Triggers: User runs `watchr koans.watchr`.
+- Responsibilities: Re-run `bin/koans walk` (or `../bin/koans walk` from inside `koans/`) on `*.rb` / `*.txt` changes.
 
-**Consistency checks:**
-- Location: `rakelib/checks.rake:48`.
-- Triggers: `rake check`, CI workflow.
-- Responsibilities: Compare `src/about_*.rb` count to `src/path_to_enlightenment.rb` requires and detect assertions missing placeholders.
+**`koans/path_to_enlightenment.rb`:**
+- Location: `koans/path_to_enlightenment.rb:1-44`.
+- Triggers: Loaded by `ruby path_to_enlightenment.rb` from inside `koans/`; this is the actual program the runner spawns.
+- Responsibilities: Add `koans/` to `$LOAD_PATH` and `require` every koan in canonical order; trigger the Neo `END` block.
+
+**`koans/Rakefile`:**
+- Location: `koans/Rakefile:1-12`.
+- Triggers: User runs `rake` from inside `koans/` (a stripped-down task for learners working in the generated tree).
+- Responsibilities: `task :test` runs `path_to_enlightenment.rb`.
 
 ## Architectural Constraints
 
-- **Threading:** The runtime is single-process and single-threaded. `bin/koans watch` uses a polling loop with `sleep` rather than threads (`bin/koans:61`).
-- **Global state:** `src/neo.rb` defines top-level helper methods, modifies `Object`, modifies `String`, and uses `Neo::Koan` class instance variables (`src/neo.rb:39`, `src/neo.rb:66`, `src/neo.rb:78`, `src/neo.rb:510`).
-- **Runtime hook:** `neo.rb` executes the path from an `END` block unless `NEO_DISABLE_END` is set to `true` (`src/neo.rb:557`, `bin/koans:221`). Set `NEO_DISABLE_END=true` before loading `src/neo.rb` for tooling or tests that inspect definitions.
-- **Working directory sensitivity:** Path execution expects the current directory to be `src/` or `koans/` because project koans use relative requires such as `require './triangle'` (`src/about_triangle_project.rb:4`, `Rakefile:63`, `bin/koans:46`).
-- **Generated file contract:** Do not edit `src/` as learner progress. Learner answers live in `koans/`; `rake regen` and `bin/koans reset all` replace generated files (`Rakefile:99`, `bin/koans:133`).
-- **Circular imports:** No circular require chain is detected in the core path. Topic files require `neo.rb`; `path_to_enlightenment.rb` requires topic files; `neo.rb` does not require topic files (`src/path_to_enlightenment.rb:5`, `src/about_asserts.rb:4`, `src/neo.rb`).
-- **Ruby version gates:** Some lessons load only under matching Ruby engines or versions (`src/path_to_enlightenment.rb:15`, `src/path_to_enlightenment.rb:38`, `src/path_to_enlightenment.rb:41`).
+- **Process model:** Single-process Ruby. The walker runs inside `ruby path_to_enlightenment.rb`, and `bin/koans walk`/`watch` spawn fresh subprocesses each iteration via `system`/`Open3`.
+- **Run-once `END` hook:** `src/neo.rb:557-562` registers an `END {}` block that auto-runs the walk. Anyone loading `src/neo.rb` from another tool (CLI introspection, internal tests) **must** set `ENV['NEO_DISABLE_END'] = 'true'` before requiring it. This is done in `bin/koans:222` and `tests/neo_output_test.rb:3`.
+- **Ordering is request-time, not declaration-time:** `Neo::Koan.subclasses` is in registration order, which equals the `require` order in `path_to_enlightenment.rb`. Reorder the requires, and you reorder the path.
+- **Module-level mutable state:** `Neo::Koan.@subclasses`, `@test_methods`, `@tests_disabled`, `@test_pattern` are class-level. Loading the koans twice in one process appends — `bin/koans` introspection commands rely on a *single* load.
+- **Generation contract:** `Koans.make_koan_file` only matches `/neo/` for verbatim copy, and the placeholder regexes are anchored on `\b`. New placeholder forms (e.g. `_____`) require updating both `Rakefile:24-32` and the duplicate in `bin/koans:347-354`.
+- **No threading, no concurrency:** Tests stop on first failure; nothing is parallelised.
+- **No circular imports:** `src/path_to_enlightenment.rb` -> each `about_*.rb` -> `neo.rb`. Linear.
+- **Top-level helpers pollute Object:** `__`, `_n_`, `___`, `____`, `in_ruby_version`, `before_ruby_version` are defined at the top level of `neo.rb` (`src/neo.rb:18-76`); `____` is added to `Object`. Anything `require`-ing `neo.rb` inherits this.
+- **Two copies of the generation logic:** `Koans` module (Rakefile) and `RubyKoansCLI.make_koan_file`/`remove_solution` (`bin/koans`). They must be kept in sync — see CONCERNS.md.
+- **Two copies of `koans.watchr`:** root and `koans/`; both shell to `bin/koans walk`. They differ only in the relative path to `bin/koans` (`bin` vs `../bin`).
 
 ## Anti-Patterns
 
-### Editing generated and canonical files interchangeably
+### Editing files in `src/` instead of `koans/`
 
-**What happens:** Applying the same feature or lesson change directly to both `src/about_*.rb` and `koans/about_*.rb` bypasses generation.
-**Why it's wrong:** `koans/` is derived from `src/`; manual edits drift from the stripping rules in `Rakefile:34` and `bin/koans:329`.
-**Do this instead:** Change canonical lesson source in `src/`, then run `rake gen` or use `bin/koans reset <file>` to regenerate the matching `koans/` file (`Rakefile:103`, `bin/koans:126`).
+**What happens:** Learner opens `src/about_strings.rb` (because their editor's grep found it first) and edits the source there.
+**Why it's wrong:** `src/` is the build input. The next `rake gen`/`bin/koans walk` will not regenerate `koans/about_strings.rb` (it's already newer), so the learner sees no change in the path. Worse, `rake regen` will overwrite their edits.
+**Do this instead:** Always edit inside `koans/`. The README explicitly says "Edit files inside +koans/+, not +src/+." (`README.rdoc:27-28`). For project tests, edit `src/*` (and remember to `rake regen`).
 
-### Loading koan definitions without disabling the `END` hook
+### Loading `src/neo.rb` without `NEO_DISABLE_END`
 
-**What happens:** Tooling that calls `load 'src/path_to_enlightenment.rb'` runs the path at process exit.
-**Why it's wrong:** The `END` block in `src/neo.rb:557` treats definition loading as a full koan run and can print output or exit unexpectedly.
-**Do this instead:** Set `ENV['NEO_DISABLE_END'] = 'true'` before loading definitions, as `bin/koans:221` and `tests/neo_output_test.rb:3` do.
+**What happens:** Some script `require`s `../src/neo` to introspect `Neo::Koan`, then exits — and the `END {}` block kicks in, running the entire path against whatever subclasses happened to be loaded.
+**Why it's wrong:** It produces stray output, may clobber `.path_progress`, and may run only a partial suite.
+**Do this instead:** Set `ENV['NEO_DISABLE_END'] = 'true'` *before* requiring `neo.rb`. See `bin/koans:222` and `tests/neo_output_test.rb:3`.
 
-### Adding topic files without updating the path
+### Using `puts` directly in failure formatting
 
-**What happens:** A new `src/about_new_topic.rb` exists but is not required in `src/path_to_enlightenment.rb`.
-**Why it's wrong:** `Neo::Koan.subclasses` only includes loaded classes, so the path and CLI never see the new topic.
-**Do this instead:** Add a `require 'about_new_topic'` line to `src/path_to_enlightenment.rb` and let `rake check` validate count parity (`rakelib/checks.rake:4`).
+**What happens:** Adding a debug `puts failure.message` in `Neo::Sensei#guide_through_error`.
+**Why it's wrong:** The whole point of `assert_failed?` branching at `src/neo.rb:362-371` is that for `FailedAssertionError` we must *not* leak the expected/actual values; otherwise the koan's answer appears in the terminal. `tests/neo_output_test.rb:16-29` enforces this.
+**Do this instead:** Print location only for assertion failures; print full backtrace only for genuine runtime errors.
 
-### Using absolute process assumptions inside koan files
+### Adding a koan file but forgetting `require` in `path_to_enlightenment.rb`
 
-**What happens:** A koan file assumes project root paths while execution runs inside `koans/` or `src/`.
-**Why it's wrong:** The path runner changes directory before executing (`Rakefile:63`, `bin/koans:164`), so root-relative file access can fail.
-**Do this instead:** Use file-local paths or current-directory-relative dependencies matching existing examples like `require File.expand_path(File.dirname(__FILE__) + '/neo')` and `require './triangle'` (`src/about_asserts.rb:4`, `src/about_triangle_project.rb:4`).
+**What happens:** A new `src/about_foo.rb` exists, gets generated into `koans/about_foo.rb`, but is never run.
+**Why it's wrong:** `Neo::ThePath#walk` only iterates registered subclasses. No `require`, no registration, no walk.
+**Do this instead:** Add `require 'about_foo'` to `src/path_to_enlightenment.rb` in the appropriate position; `rake check:abouts` will warn if you forget.
+
+### Skipping the placeholder convention
+
+**What happens:** Author writes `assert_equal 2, 1 + 1` directly in `src/about_xxx.rb`.
+**Why it's wrong:** After generation, the koan has the answer baked in — there's nothing for the learner to do. `rake check:asserts` (`rakelib/checks.rake:18-44`) flags asserts that lack `__` or `_n_`.
+**Do this instead:** Use `assert_equal __(2), 1 + 1`, or the `#--`/`#++` block form for multi-line answers.
+
+### Hand-writing files into `koans/` and committing them
+
+**What happens:** Someone edits `koans/about_strings.rb` and commits it.
+**Why it's wrong:** `.gitignore` line 10 (`koans/*`) excludes everything inside `koans/`. The commit will silently drop those files. `koans/` is generated, not source.
+**Do this instead:** Make the change in `src/`, run `rake regen`, and commit only the `src/` change.
 
 ## Error Handling
 
-**Strategy:** Koan failures are expected control flow. Assertion failures hide answers; non-assertion runtime failures print class and message context.
+**Strategy:** Distinguish *expected* failures (a koan failing because the learner has not yet filled it in) from *unexpected* failures (a typo, missing constant, runtime error). Both stop the walk, but they are formatted differently to avoid leaking answers.
 
 **Patterns:**
-- Raise `Neo::Assertions::FailedAssertionError` through `flunk` for assertion failures (`src/neo.rb:147`, `src/neo.rb:150`).
-- Capture `StandardError` and assertion failures inside `Neo::Koan#meditate` so the path can continue to reporting (`src/neo.rb:463`).
-- Use `throw :neo_exit` to stop the path after the first failing step (`src/neo.rb:252`, `src/neo.rb:544`).
-- Return numeric CLI status codes from command methods and call `exit` in the dispatcher (`bin/koans:16`, `bin/koans:21`).
-- Rescue invalid watch intervals and reset targets with safe defaults or user-facing errors (`bin/koans:175`, `bin/koans:150`).
+- `Neo::Assertions::FailedAssertionError` is a custom subclass; `assert*` helpers `flunk` to it (`src/neo.rb:148-152`).
+- `Neo::Koan#meditate` rescues `StandardError` *or* `Neo::Sensei::FailedAssertionError`, attaching the exception via `failed(ex)` (`src/neo.rb:463-477`).
+- `Neo::Sensei#guide_through_error` branches on `assert_failed?`: assertion failures print only the file:line; everything else prints the exception class + message (`src/neo.rb:362-375`).
+- `Neo::Sensei#observe` calls `throw :neo_exit`, caught by `Neo::ThePath#each_step`'s `catch(:neo_exit)` (`src/neo.rb:543-553`). This is the entire fail-fast mechanism.
+- `bin/koans` commands always return an integer status; `RubyKoansCLI.call` `exit`s with it (`bin/koans:16-41`). `run` swallows `Dir.chdir`/`system` failures into a `1` (`bin/koans:163-169`).
+- `bin/koans reset` rescues `ArgumentError` from `normalize_target_file` (path-traversal guard) (`bin/koans:150-153`).
 
 ## Cross-Cutting Concerns
 
-**Logging:** User-facing output uses `puts`, `warn`, and terminal coloring through `Neo::Color` (`src/neo.rb:98`, `bin/koans:33`, `bin/koans:36`).
-**Validation:** File-name validation for reset is explicit in `bin/koans:320`; consistency validation lives in `rakelib/checks.rake`; koan assertions live in `Neo::Assertions` (`src/neo.rb:147`).
-**Authentication:** Not applicable; the repository has no authentication layer.
-**Configuration:** Environment variables control output and progress behavior: `SIMPLE_KOAN_OUTPUT`, `NO_COLOR`, `ANSI_COLOR`, `NEO_DISABLE_END`, `KOANS_WATCH_INTERVAL`, `KOANS_NO_CLEAR`, and `KOANS_PROGRESS_FILE` (`src/neo.rb:93`, `src/neo.rb:125`, `bin/koans:175`, `bin/koans:196`).
-**Packaging:** `Rakefile` creates `download/rubykoans.zip` from `koans/*` and includes upload support (`Rakefile:80`, `Rakefile:95`).
+**Logging:** Direct `puts` to `$stdout`. Colorisation through `Neo::Color` (which honours `NO_COLOR` and `ANSI_COLOR` env vars, `src/neo.rb:125-136`).
+
+**Validation:** `rake check:abouts` (does every `src/about_*.rb` have a matching `require` in `path_to_enlightenment.rb`?) and `rake check:asserts` (does every `assert*` line carry a `__` placeholder?). Defined in `rakelib/checks.rake`.
+
+**Authentication:** Not applicable.
+
+**Configuration:** Environment variables only:
+- `NEO_DISABLE_END` (skip the auto-walk `END` block)
+- `SIMPLE_KOAN_OUTPUT` (boring vs artistic end screen, `src/neo.rb:93-95`)
+- `NO_COLOR`, `ANSI_COLOR` (color toggling)
+- `KOANS_WATCH_INTERVAL` (watcher poll interval, default `0.5`s)
+- `KOANS_NO_CLEAR` (suppress screen clear in watch mode)
+- `KOANS_PROGRESS_FILE` (override `.path_progress` location, used by tests)
+
+**Internationalisation:** Single-language (English).
 
 ---
 
