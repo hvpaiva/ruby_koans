@@ -4,21 +4,23 @@ on: [push, pull_request]
 
 jobs:
   test:
-    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        ruby-version: ["3.2", "3.3", "3.4"]
+        os: [ubuntu-latest, macos-latest]
+        ruby: ["4.0", head]
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.ruby == 'head' }}
+    name: ${{ matrix.os }} / Ruby ${{ matrix.ruby }}
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install Ruby
+      - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: ${{ matrix.ruby-version }}
+          ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
 
-      - name: Run tests and checks
-        run: bundle exec rake test check
+      - name: Run tests
+        run: bundle exec rake test

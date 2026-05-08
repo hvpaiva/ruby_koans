@@ -1,0 +1,12 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Placeholder shim for the rubykoans CLI.
+# Plan 04 (Phase 1, Wave 3) replaces this file with the full Thor-based dispatcher
+# (see .planning/phases/01-walking-skeleton/01-04-PLAN.md). This stub exists only so
+# that `gem build rubykoans.gemspec` passes the executables-exist policy validation
+# in Plan 01 / Task 5 (INFRA-05) before Plan 04 lands.
+
+warn "rubykoans: CLI not implemented yet (Phase 1 Plan 04 will deliver `koans init`/`koans run`). " \
+     "This is the Plan 01 placeholder shim."
+exit 1
