@@ -13,3 +13,4 @@ end
 
 require_relative "rubykoans/exercise"
 require_relative "rubykoans/curriculum"
+require_relative "rubykoans/colors"
