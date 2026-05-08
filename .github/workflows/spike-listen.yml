@@ -1,0 +1,39 @@
+name: Spike — Listen on Ruby 4.0.3
+
+# WATCH-05 / CONTEXT.md D-12 — one-off workflow. This file is git-removed
+# once the spike's verdict is recorded in
+# .planning/phases/01-walking-skeleton/01-02-LISTEN-SPIKE-RESULT.md
+# and the corresponding action (none / Phase-2 polling fallback) is taken.
+#
+# Security note: this workflow uses only the matrix.os variable in templating
+# expressions; no untrusted input (issue titles, PR bodies, commit messages,
+# head_ref, etc.) ever reaches a `run:` step. The single `run:` is a static
+# command string. No shell injection surface.
+
+on:
+  workflow_dispatch:        # manual trigger; the spike runs once on demand
+  push:
+    paths:
+      - 'spike/**'
+      - '.github/workflows/spike-listen.yml'
+
+jobs:
+  listen-check:
+    strategy:
+      fail-fast: false      # we want both legs to run even if one fails
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.os }} / Ruby 4.0.3
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Ruby 4.0.3
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 4.0.3
+          bundler-cache: true
+
+      - name: Run listen spike
+        run: bundle exec ruby spike/listen_check.rb
