@@ -1,0 +1,37 @@
+# data/info.yml — curriculum manifest. Single source of truth for exercise order.
+# See REQUIREMENTS.md §DATA-01..05 and lib/rubykoans/curriculum.rb.
+#
+# Each entry under `exercises:` becomes a Rubykoans::Exercise (DATA-02). Required
+# keys per entry:
+#   name (str), dir (str), test (bool), skip_check_unsolved (bool),
+#   hints (array of str), concepts_introduced (array of str),
+#   concepts_required (array of str).
+# Optional keys:
+#   path (str)            — explicit workspace-relative override (Phase 3+)
+#   solution_path (str)   — explicit workspace-relative override (Phase 3+)
+# When omitted, both are derived from `dir`/`name`:
+#   path          = "exercises/<dir>/<name>.rb"
+#   solution_path = "solutions/<dir>/<name>.rb"
+
+format_version: 1
+
+welcome_message: |
+  Welcome to Ruby Koans (working title: Ruby Path).
+  You will learn Ruby 4 the way the community actually writes it today.
+
+final_message: |
+  You have walked the entire path.
+  The error messages were the lesson.
+
+exercises:
+  - name: intro1
+    dir: 00_intro
+    test: false                  # bare script, not Minitest (D-07/D-09).
+    skip_check_unsolved: true    # no broken state from the runner's POV — see D-08.
+    concepts_introduced:
+      - workflow
+      - edit_save_run
+    concepts_required: []        # first exercise — assumes nothing.
+    hints:
+      - "Read the comments at the top of `exercises/00_intro/intro1.rb`."
+      - "Delete the line that says `raise NotImplementedError, ...` and save the file."
